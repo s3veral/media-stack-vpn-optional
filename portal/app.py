@@ -116,7 +116,7 @@ def media_card(item):
             'title': item.get('title') or item.get('name') or 'Sem titulo',
             'year': (item.get('releaseDate') or item.get('firstAirDate') or '')[:4],
             'overview': item.get('overview', ''), 'poster': item.get('posterPath'),
-            'score': item.get('voteAverage', 0), 'status': item.get('mediaInfo', {}).get('status', 1)}
+            'score': item.get('voteAverage', 0), 'status': (item.get('mediaInfo') or {}).get('status', 1)}
 
 
 def build_snapshot():

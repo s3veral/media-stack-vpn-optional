@@ -1,4 +1,4 @@
-# Media Stack: TrueNAS e Windows, VPN opcional
+# Sala: homepage de midia + stack ARR, TrueNAS e Windows
 
 Fork pessoal de [Servers@Home](https://github.com/serversathome/ServersatHome),
 baseado no commit `ef1d9596165c2c5beaf069336a2f86947fc02615`.
@@ -8,6 +8,14 @@ BitTorrent nao precisa de VPN. Escolha **com WireGuard** ou **sem VPN** na
 instalacao. Sem VPN, o trafego sai pela sua conexao normal e os peers veem
 seu IP publico. Com VPN, o cliente fica vinculado a `wg0`; o instalador nao
 muda automaticamente para conexao direta se o tunel falhar.
+
+A homepage **Sala** centraliza busca de filmes/series pelo Seerr, solicitacao
+de titulos, progresso e velocidade dos downloads, pausa/retomada, fila do
+Radarr/Sonarr, pedidos recentes, biblioteca e capacidade do disco de midia.
+O painel atualiza a cada 15 segundos e tem login, sessao HttpOnly, protecao CSRF
+e limite de tentativas de acesso. As chaves dos servicos permanecem no backend.
+O aplicativo le as configuracoes dos outros containers como somente leitura;
+nao recebe acesso ao socket Docker.
 
 ## TrueNAS SCALE
 
@@ -29,6 +37,11 @@ No modo direto publica a porta P2P 6881 TCP/UDP. O estado e salvo em
 guardando uma copia do anterior. Os logins padrao do instalador TrueNAS original
 continuam `admin` / `changeme`; altere-os nas interfaces.
 
+Ao final, responda `s` para instalar tambem a homepage Sala. Ela fica em
+`http://IP-DO-TRUENAS:8090`, com senha propria aleatoria exibida no terminal.
+O instalador pergunta se deseja publicar com Cloudflare e qual subdominio usar.
+O portal fica em `/mnt/<pool-configs>/docker/sala`, separado do Compose original.
+
 ## Windows com Docker Desktop
 
 Requisito: [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/)
@@ -42,11 +55,13 @@ Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/s3veral/me
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-install.ps1"
 ```
 
-Escolha a pasta da biblioteca (por exemplo `D:\Media`) e responda `n` para usar
-sem VPN. Instalacao padrao em `%USERPROFILE%\MediaStack`. Exemplo sem perguntas:
+Escolha a pasta da biblioteca (por exemplo `D:\Media`), se deseja VPN e se quer
+acesso externo com Cloudflare. Para acesso externo, informe o subdominio completo
+e um API token da Cloudflare no prompt oculto. Instalacao padrao em
+`%USERPROFILE%\MediaStack`. Exemplo apenas local, sem perguntas:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-install.ps1" -Vpn Off -MediaPath 'D:\Media'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-install.ps1" -Vpn Off -Remote Off -MediaPath 'D:\Media'
 ```
 
 O instalador cria `movies`, `tv`, `downloads/torrent` e `downloads/crossseed`
@@ -65,6 +80,7 @@ Os paines ficam em `localhost` no Windows por padrao:
 
 | Servico | Endereco |
 | --- | --- |
+| Homepage Sala | http://localhost:8090 |
 | Jellyfin | http://localhost:8096 |
 | Seerr | http://localhost:5055 |
 | qBittorrent | http://localhost:8080 |
@@ -84,6 +100,45 @@ para diagnostico; reexecute para tentar novamente. Indexadores do Prowlarr,
 idiomas/provedores do Bazarr e o scan inicial do Qui continuam manuais.
 As automacoes do Qui herdadas do upstream incluem limpeza de downloads antigos;
 revise-as na interface antes de adicionar sua biblioteca.
+
+## Cloudflare Tunnel e subdominio
+
+Para publicar somente a homepage (os paines administrativos continuam locais),
+voce precisa de um dominio ativo na sua conta Cloudflare e um API token com:
+
+- **Account / Cloudflare Tunnel / Edit** na conta que contem o dominio;
+- **Zone / DNS / Edit** e **Zone / Zone / Read** na zona do dominio.
+
+Crie o token em [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens),
+restrito a sua conta e zona. O nome da permissao pode aparecer como
+Cloudflare One Connector: cloudflared Write em contas novas; e a permissao de
+escrita de Tunnel descrita na [documentacao oficial](https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/).
+
+O instalador identifica a zona (inclusive dominios `.com.br`), cria um tunnel
+gerenciado, configura a rota `https://seu-subdominio` para `http://dashboard:8080`,
+cria o CNAME e sobe o container `cloudflared`. Nao substitui um registro DNS que
+aponte para outro servico. O API token e usado somente para configurar e nao e
+salvo; o token de execucao do tunnel fica no arquivo local `.secrets/tunnel_token`,
+excluido do Git. Tunnels ja configurados para o mesmo hostname sao reutilizados.
+
+No Windows, tambem pode iniciar assim:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-install.ps1" -Vpn Off -MediaPath 'D:\Media' -Remote On -PublicHostname 'sala.seudominio.com'
+```
+
+Voce informara o API token pelo prompt oculto; nao o coloque no comando.
+Para desativar o acesso externo, execute `install-windows.ps1 -Remote Off`.
+O conector para, mas o DNS/tunnel permanece na sua conta para reuso. Se voce
+rotacionar o token do tunnel na Cloudflare, renomeie `.secrets/tunnel_token` para
+um backup e reexecute o instalador para gerar outro.
+
+O tunnel publica a homepage, nao o streaming Jellyfin nem as APIs administrativas
+dos aplicativos. Busca e solicitacoes dependem do setup do Seerr, dos perfis
+Radarr/Sonarr e dos seus indexadores; o painel nao adiciona fontes de conteudo.
+A capacidade exibida e a do filesystem montado em `/media`, nao a memoria/CPU
+do host. No Docker Desktop, confira se a pasta escolhida corresponde ao disco
+que deseja monitorar. Imagens de capas sao carregadas do TMDB pelo navegador.
 
 Gerenciar depois da instalacao:
 
@@ -128,6 +183,9 @@ Testes locais: parser PowerShell, sintaxe Bash, configuracoes Compose nos dois
 modos, selecao/persistencia de VPN, mudanca da interface e geracao do setup
 portavel. O workflow verifica tambem o build do setup e um download de uma
 fixture local via BitTorrent **sem VPN**, sem baixar midia de terceiros.
+Testes adicionais cobrem login, sessao, CSRF, limitacao de tentativas, pedidos
+permitidos e provisionamento Cloudflare com uma API simulada. Nenhuma zona DNS
+real e alterada pelos testes. A interface foi conferida no navegador local.
 Os fluxos completos de onboarding das APIs dos aplicativos dependem das imagens
 `latest` e podem exigir ajustes conforme os projetos mudam. VPN requer um
 servidor/perfil real para validar o handshake; nenhum segredo esta no repositorio.

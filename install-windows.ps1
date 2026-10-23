@@ -159,6 +159,10 @@ Invoke-Compose config --quiet
 Invoke-Compose stop qbittorrent
 Invoke-Compose --profile setup build setup
 Invoke-Compose --profile setup run --rm --no-deps setup prepare
+Invoke-Compose up -d --build
+if (-not $SkipConfigure) {
+    Invoke-Compose --profile setup run --rm --no-deps setup configure
+}
 if ($remoteEnabled) {
     $tunnelMetadata = Join-Path $InstallDir '.secrets\tunnel.json'
     $reuseTunnel = $false
@@ -176,10 +180,6 @@ if ($remoteEnabled) {
             Invoke-Compose --profile setup run --rm --no-deps -e CLOUDFLARE_API_TOKEN setup provision
         } finally { $env:CLOUDFLARE_API_TOKEN = $previousToken }
     }
-}
-Invoke-Compose up -d --build
-if (-not $SkipConfigure) {
-    Invoke-Compose --profile setup run --rm --no-deps setup configure
 }
 if ($remoteEnabled) { Invoke-Compose --profile tunnel up -d cloudflared }
 else { Invoke-Compose --profile tunnel stop cloudflared }
