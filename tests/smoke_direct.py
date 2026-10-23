@@ -46,16 +46,23 @@ def main():
 
     def api(path, data=None):
         payload = urllib.parse.urlencode(data).encode() if data is not None else None
-        return client.open('http://localhost:8080/api/v2/' + path, payload, timeout=10).read()
+        request = urllib.request.Request('http://localhost:8080/api/v2/' + path, payload,
+                                         {'Origin': 'http://localhost:8080', 'Referer': 'http://localhost:8080/'})
+        return client.open(request, timeout=10).read().strip()
 
-    for _ in range(90):
+    for attempt in range(90):
         try:
             logs = subprocess.check_output(['docker', 'logs', 'qbittorrent'], stderr=subprocess.STDOUT).decode()
             passwords = re.findall(r'temporary password is provided for this session:\s*(\S+)', logs)
-            if passwords and api('auth/login', {'username': 'admin', 'password': passwords[-1]}) == b'Ok.':
-                break
-        except (OSError, urllib.error.URLError):
-            pass
+            if passwords:
+                response = api('auth/login', {'username': 'admin', 'password': passwords[-1]})
+                if response == b'Ok.':
+                    break
+                if attempt < 10:
+                    print('Login response:', repr(response), flush=True)
+        except (OSError, urllib.error.URLError) as error:
+            if attempt < 10:
+                print('Waiting for WebUI:', type(error).__name__, str(error)[:160], flush=True)
         time.sleep(2)
     else:
         raise RuntimeError('qBittorrent did not become ready')
@@ -75,3 +82,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
