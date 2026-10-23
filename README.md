@@ -56,8 +56,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-i
 ```
 
 Escolha a pasta da biblioteca (por exemplo `D:\Media`), se deseja VPN e se quer
-acesso externo com Cloudflare. Para acesso externo, informe o subdominio completo
-e um API token da Cloudflare no prompt oculto. Instalacao padrao em
+acesso externo com Cloudflare. Para acesso externo, abra o link oficial mostrado,
+autorize o dominio no navegador e informe o subdominio completo no terminal.
+Nenhum API token e solicitado. Instalacao padrao em
 `%USERPROFILE%\MediaStack`. Exemplo apenas local, sem perguntas:
 
 ```powershell
