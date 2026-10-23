@@ -76,9 +76,9 @@ def main():
     torrent = bencode({b'info': info})
     info_hash = hashlib.sha1(bencode(info)).hexdigest()
     subprocess.run(['docker', 'run', '-d', '--name', 'torrent-seed',
-                    '--network', 'media-stack_default', '-p', '127.0.0.1:8081:8080',
+                    '--network', 'media-stack_default', '-p', '127.0.0.1:8081:8081',
                     '-e', 'VPN_ENABLED=false', '-e', 'PUID=1000', '-e', 'PGID=1000',
-                    '-e', 'WEBUI_PORTS=8080/tcp', '-v', f'{fixture.resolve()}:/media/downloads',
+                    '-e', 'WEBUI_PORTS=8081/tcp', '-v', f'{fixture.resolve()}:/media/downloads',
                     'ghcr.io/hotio/qbittorrent:latest'], check=True)
     try:
         receiver, seed = Client(8080, 'qbittorrent'), Client(8081, 'torrent-seed')
@@ -109,9 +109,13 @@ def main():
                 print('Fixture transfer:', [{key: item.get(key) for key in ('name', 'state', 'progress', 'num_seeds')} for item in rows], flush=True)
             time.sleep(1)
         raise RuntimeError('Local torrent fixture did not finish without VPN')
+    except Exception:
+        print(subprocess.check_output(['docker', 'logs', 'torrent-seed'], stderr=subprocess.STDOUT).decode(), flush=True)
+        raise
     finally:
         subprocess.run(['docker', 'rm', '-f', 'torrent-seed'], check=False)
 
 
 if __name__ == '__main__':
     main()
+
