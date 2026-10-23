@@ -9,6 +9,8 @@ param(
     [string]$TimeZone = 'America/Sao_Paulo',
     [ValidateSet('Ask', 'On', 'Off')][string]$Remote = 'Ask',
     [string]$PublicHostname,
+    [ValidateSet('Ask', 'On', 'Off')][string]$Archive = 'Ask',
+    [string]$DriveConfig,
     [switch]$GenerateOnly,
     [switch]$SkipConfigure
 )
@@ -56,6 +58,10 @@ if ($Vpn -eq 'Ask') {
 
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'wireguard') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets\runtime') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets\archive') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets\rclone') | Out-Null
+$proxyKeyPath = Join-Path $InstallDir '.secrets\archive\proxy-key'
+if (-not (Test-Path -LiteralPath $proxyKeyPath)) { Write-Utf8 $proxyKeyPath ([Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N')) }
 $wgTarget = Join-Path $InstallDir 'wireguard\wg0.conf'
 if ($vpnEnabled) {
     if (-not $WireGuardConfig -and -not (Test-Path -LiteralPath $wgTarget)) {
@@ -82,10 +88,10 @@ if ($LanNetwork -notmatch '^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$' -or $LanNetwork -mat
 }
 
 New-Item -ItemType Directory -Force -Path $MediaPath | Out-Null
-foreach ($dir in @('movies', 'tv', 'downloads', 'downloads\torrent', 'downloads\crossseed')) {
+foreach ($dir in @('movies', 'tv', 'photos', 'music', 'downloads', 'downloads\torrent', 'downloads\crossseed')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $MediaPath $dir) | Out-Null
 }
-$assets = @('compose.windows.yml', 'compose.direct.yml', 'compose.vpn.yml', 'truenas-file-structure.sh', 'install-windows.ps1', 'stack.ps1', '.dockerignore', 'windows\Dockerfile.setup', 'windows\build_configure.py', 'windows\entrypoint.sh', 'portal\Dockerfile', 'portal\app.py', 'portal\cloudflare_setup.py', 'portal\static\index.html', 'portal\static\style.css', 'portal\static\app.js')
+$assets = @('compose.windows.yml', 'compose.direct.yml', 'compose.vpn.yml', 'truenas-file-structure.sh', 'install-windows.ps1', 'connect-drive.ps1', 'stack.ps1', '.dockerignore', 'windows\Dockerfile.setup', 'windows\build_configure.py', 'windows\entrypoint.sh', 'portal\Dockerfile', 'portal\Dockerfile.archive', 'portal\Dockerfile.telegram', 'portal\app.py', 'portal\archive.py', 'portal\archive_client.py', 'portal\archive_setup.py', 'portal\cloudflare_setup.py', 'portal\static\index.html', 'portal\static\style.css', 'portal\static\app.js', 'portal\static\cloud.js', 'portal\static\cloud.css')
 foreach ($asset in $assets) {
     $source = Join-Path $PSScriptRoot $asset
     $destination = Join-Path $InstallDir $asset
@@ -111,7 +117,17 @@ if ($remoteEnabled -and $PublicHostname) {
     $PublicHostname = $PublicHostname.Trim().ToLowerInvariant()
     if ($PublicHostname -notmatch '^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$') { throw 'Informe um subdominio completo, sem https:// ou caminhos.' }
 }
-$settings = [ordered]@{ MediaPath = $MediaPath; VpnEnabled = $vpnEnabled; LanNetwork = $LanNetwork; AdminPass = $adminPass; TimeZone = $TimeZone; RemoteEnabled = $remoteEnabled; PublicHostname = $PublicHostname }
+$archiveEnabled = $false
+if ($saved -and $saved.PSObject.Properties.Name -contains 'ArchiveEnabled') { $archiveEnabled = [bool]$saved.ArchiveEnabled }
+if ($Archive -eq 'Ask' -and -not $GenerateOnly) {
+    $defaultArchive = if ($archiveEnabled) { 's' } else { 'n' }
+    do {
+        $answer = Read-Host "Ativar arquivo Drive + Telegram (Drive para tudo, Telegram ate 2.000 MB)? [s/n] (Enter: $defaultArchive)"
+        if (-not $answer) { $answer = $defaultArchive }
+    } while ($answer -notmatch '^(s|sim|y|yes|n|nao|no)$')
+    $archiveEnabled = $answer -match '^(s|sim|y|yes)$'
+} elseif ($Archive -ne 'Ask') { $archiveEnabled = $Archive -eq 'On' }
+$settings = [ordered]@{ MediaPath = $MediaPath; VpnEnabled = $vpnEnabled; LanNetwork = $LanNetwork; AdminPass = $adminPass; TimeZone = $TimeZone; RemoteEnabled = $remoteEnabled; PublicHostname = $PublicHostname; ArchiveEnabled = $archiveEnabled }
 if (Test-Path -LiteralPath $settingsPath) { Copy-Item -LiteralPath $settingsPath -Destination "$settingsPath.bak" -Force }
 Write-Utf8 $settingsPath ($settings | ConvertTo-Json)
 $envValues = [ordered]@{
@@ -125,6 +141,7 @@ $envValues = [ordered]@{
     ADMIN_PASS = $adminPass
     ADMIN_EMAIL = 'admin@localhost.local'
     PUBLIC_HOSTNAME = $PublicHostname
+    ARCHIVE_ENABLED = $archiveEnabled.ToString().ToLowerInvariant()
 }
 $lines = foreach ($key in $envValues.Keys) { "$key=$(Quote-DotEnv $envValues[$key])" }
 Write-Utf8 (Join-Path $InstallDir '.env') (($lines -join "`n") + "`n")
@@ -177,9 +194,21 @@ if ($remoteEnabled) {
 }
 if ($remoteEnabled) { Invoke-Compose --profile tunnel up -d cloudflared }
 else { Invoke-Compose --profile tunnel stop cloudflared }
+if ($archiveEnabled) {
+    $rcloneConfig = Join-Path $InstallDir '.secrets\rclone\rclone.conf'
+    if ($DriveConfig) {
+        $DriveConfig = (Resolve-Path -LiteralPath $DriveConfig).Path
+        if ($DriveConfig -ne $rcloneConfig) { Copy-Item -LiteralPath $DriveConfig -Destination $rcloneConfig -Force }
+    }
+    if (-not (Test-Path -LiteralPath $rcloneConfig)) { & (Join-Path $InstallDir 'connect-drive.ps1') -ConfigPath $rcloneConfig }
+    Invoke-Compose --profile setup run --rm --no-deps setup archive-configure
+    Write-Host 'Compilando o Bot API local a partir do codigo oficial Telegram; a primeira vez pode levar varios minutos.'
+    Invoke-Compose --profile archive up -d --build archive telegram-bot-api
+} else { Invoke-Compose --profile archive stop archive telegram-bot-api }
 Write-Host ''
 Write-Host 'Stack iniciada. Jellyfin: http://localhost:8096 | Seerr: http://localhost:5055'
 Write-Host 'Homepage Sala: http://localhost:8090'
+if ($archiveEnabled) { Write-Host 'Arquivo em nuvem: aba Nuvem da homepage. Copias incrementais; originais preservados.' }
 if ($remoteEnabled) { Write-Host "Acesso externo: https://$PublicHostname" }
 Write-Host 'qBittorrent: http://localhost:8080 | Radarr: http://localhost:7878 | Sonarr: http://localhost:8989'
 Write-Host "Login da homepage: admin / $adminPass (tambem salvo em $settingsPath)."

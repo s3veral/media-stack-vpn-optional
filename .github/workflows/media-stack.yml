@@ -1,9 +1,9 @@
 name: Media stack checks
 on:
   push:
-    paths: ['truenas-file-structure.sh', '*windows*', 'stack.ps1', 'compose*.yml', 'windows/**', 'portal/**', 'tests/**', '.github/workflows/media-stack.yml']
+    paths: ['truenas-file-structure.sh', '*windows*', 'connect-drive.ps1', 'stack.ps1', 'compose*.yml', 'windows/**', 'portal/**', 'tests/**', '.github/workflows/media-stack.yml']
   pull_request:
-    paths: ['truenas-file-structure.sh', '*windows*', 'stack.ps1', 'compose*.yml', 'windows/**', 'portal/**', 'tests/**', '.github/workflows/media-stack.yml']
+    paths: ['truenas-file-structure.sh', '*windows*', 'connect-drive.ps1', 'stack.ps1', 'compose*.yml', 'windows/**', 'portal/**', 'tests/**', '.github/workflows/media-stack.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,12 +14,13 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash -n truenas-file-structure.sh && bash -n windows/entrypoint.sh
       - run: python3 -m unittest discover -s tests -v
+      - run: node --check portal/static/app.js && node --check portal/static/cloud.js
       - name: Generate portable setup and check Bash syntax
         run: python3 windows/build_configure.py | bash -n
       - name: Parse PowerShell and prepare direct mode
         shell: pwsh
         run: |
-          foreach ($file in @('bootstrap-windows.ps1','install-windows.ps1','stack.ps1')) {
+          foreach ($file in @('bootstrap-windows.ps1','install-windows.ps1','connect-drive.ps1','stack.ps1')) {
             $parseErrors = $null
             [Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$null, [ref]$parseErrors) | Out-Null
             if ($parseErrors) { throw ($parseErrors | Out-String) }
@@ -35,6 +36,9 @@ jobs:
           docker compose -f compose.windows.yml -f compose.vpn.yml config --quiet
           docker compose -f compose.windows.yml --profile setup build setup
           docker compose -f compose.windows.yml build dashboard
+          docker build -f portal/Dockerfile.archive -t sala-archive-check .
+      - name: Archive smoke test with real rclone and synthetic Telegram
+        run: docker run --rm -v "$PWD:/checks:ro" --entrypoint python sala-archive-check /checks/tests/smoke_archive.py
       - name: Validate browser-login config with official cloudflared
         env:
           MEDIA_PATH: /tmp/media-stack-ci
@@ -59,3 +63,12 @@ jobs:
           MEDIA_PATH: /tmp/media-stack-ci
           ADMIN_PASS: ci-only-not-a-real-secret
         run: docker compose -f compose.windows.yml -f compose.direct.yml down
+  telegram-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned official Telegram Bot API source
+        run: |
+          docker build -f portal/Dockerfile.telegram -t sala-telegram-check .
+          docker run --rm sala-telegram-check --help

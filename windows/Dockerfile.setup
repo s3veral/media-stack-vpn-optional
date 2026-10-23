@@ -6,6 +6,7 @@ WORKDIR /installer
 COPY truenas-file-structure.sh ./
 COPY windows/build_configure.py windows/entrypoint.sh ./windows/
 COPY portal/cloudflare_setup.py ./portal/
+COPY portal/archive_setup.py ./portal/
 RUN python3 windows/build_configure.py > /usr/local/bin/configure-stack \
     && bash -n /usr/local/bin/configure-stack \
     && cloudflared version \

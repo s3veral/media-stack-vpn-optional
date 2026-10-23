@@ -7,5 +7,6 @@ $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
 $override = if ($settings.VpnEnabled) { 'compose.vpn.yml' } else { 'compose.direct.yml' }
 $profiles = @()
 if ($settings.PSObject.Properties.Name -contains 'RemoteEnabled' -and $settings.RemoteEnabled) { $profiles = @('--profile', 'tunnel') }
+if ($settings.PSObject.Properties.Name -contains 'ArchiveEnabled' -and $settings.ArchiveEnabled) { $profiles += @('--profile', 'archive') }
 & docker compose --project-directory $PSScriptRoot --env-file "$PSScriptRoot\.env" -f "$PSScriptRoot\compose.windows.yml" -f "$PSScriptRoot\$override" @profiles @DockerArgs
 exit $LASTEXITCODE

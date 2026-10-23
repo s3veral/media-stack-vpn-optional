@@ -1,5 +1,6 @@
 """Local media portal. Standard library only; credentials stay on the server."""
 from concurrent.futures import ThreadPoolExecutor
+import archive_client
 import hashlib
 import hmac
 from http.cookies import SimpleCookie
@@ -272,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if path == '/health':
             return self.send(200, {'ok': True})
-        if path in ('/', '/style.css', '/app.js'):
+        if path in ('/', '/style.css', '/cloud.css', '/app.js', '/cloud.js'):
             file = STATIC / ('index.html' if path == '/' else path[1:])
             return self.send(200, file.read_bytes(), mimetypes.guess_type(str(file))[0] or 'text/plain')
         token = self.session()
@@ -283,6 +284,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {'username': USERNAME, 'csrf': sign('csrf:' + token)})
             if path == '/api/status':
                 return self.send(200, snapshot())
+            if path == '/api/archive':
+                if not archive_client.enabled():
+                    return self.send(200, {'enabled': False, 'items': []})
+                query = urllib.parse.parse_qs(parsed.query)
+                parameters = {key: query.get(key, [''])[0][:150] for key in ('q', 'category', 'page')}
+                parameters['page'] = parameters['page'] or '1'
+                return self.send(200, archive_client.call('/catalog?' + urllib.parse.urlencode(parameters)))
+            if path == '/api/archive/export':
+                return self.send(200, archive_client.call('/export'))
+            if path.startswith('/api/archive/file/'):
+                code = path[len('/api/archive/file/'):]
+                if not re.fullmatch(r'SAL-[0-9A-F]{24}', code):
+                    return self.send(400, {'error': 'Codigo invalido.'})
+                # The public tunnel is a control panel, not a bulk media CDN.
+                # Remote users can open the private Drive/Telegram links instead.
+                if self.headers.get('X-Forwarded-Proto') == 'https' and os.getenv('ARCHIVE_REMOTE_STREAM', 'false') != 'true':
+                    return self.send(403, {'error': 'Reproducao pelo painel disponivel na rede local. Use Abrir no Drive para acesso externo.'})
+                return self.archive_stream(code)
             if path == '/api/search':
                 query = urllib.parse.parse_qs(parsed.query).get('q', [''])[0].strip()[:120]
                 if len(query) < 2:
@@ -293,6 +312,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {'error': 'Pagina nao encontrada.'})
         except ServiceError as error:
             return self.send(502, {'error': 'Servico indisponivel: ' + str(error)})
+        except (urllib.error.URLError, OSError):
+            return self.send(503, {'error': 'Arquivo em nuvem indisponivel; confira a instalacao e as autorizacoes.'})
         except Exception:
             return self.send(500, {'error': 'Nao foi possivel atualizar. Verifique a configuracao dos servicos.'})
 
@@ -327,6 +348,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(403, {'error': 'Sessao invalida. Atualize a pagina.'})
             if path == '/api/logout':
                 return self.send(200, {'ok': True}, cookie='media_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0')
+            if path == '/api/archive/control':
+                # The worker independently validates code, provider and action.
+                payload = {key: body[key] for key in ('action', 'provider', 'code') if key in body}
+                return self.send(200, archive_client.call('/control', payload))
             if path == '/api/request':
                 media_type = body.get('type')
                 media_id = body.get('id')
@@ -357,8 +382,32 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': str(error)})
         except ServiceError as error:
             return self.send(502, {'error': 'Servico indisponivel: ' + str(error)})
+        except (urllib.error.URLError, OSError):
+            return self.send(503, {'error': 'Arquivo em nuvem indisponivel; confira a instalacao e as autorizacoes.'})
         except Exception:
             return self.send(500, {'error': 'Nao foi possivel concluir a acao.'})
+
+    def archive_stream(self, code):
+        headers = {}
+        if self.headers.get('Range'):
+            headers['Range'] = self.headers['Range'][:100]
+        try:
+            response = archive_client.open_request('/file/' + code, headers=headers)
+        except urllib.error.HTTPError as error:
+            return self.send(error.code, {'error': 'Nao foi possivel ler a copia do Drive. Confira o status do envio.'})
+        with response:
+            self.send_response(response.status)
+            for name in ('Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges'):
+                if response.headers.get(name):
+                    self.send_header(name, response.headers[name])
+            self.send_header('Cache-Control', 'private, no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+            self.end_headers()
+            try:
+                shutil.copyfileobj(response, self.wfile, 256 * 1024)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
 
 
 if __name__ == '__main__':

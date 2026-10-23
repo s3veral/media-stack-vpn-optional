@@ -9,6 +9,8 @@ param(
     [string]$TimeZone = 'America/Sao_Paulo',
     [ValidateSet('Ask', 'On', 'Off')][string]$Remote = 'Ask',
     [string]$PublicHostname,
+    [ValidateSet('Ask', 'On', 'Off')][string]$Archive = 'Ask',
+    [string]$DriveConfig,
     [switch]$GenerateOnly,
     [switch]$SkipConfigure
 )

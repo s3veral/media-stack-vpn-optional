@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import sys
 import threading
 import time
 import unittest
@@ -12,6 +13,7 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'portal'))
 spec = importlib.util.spec_from_file_location('portal_app', ROOT / 'portal/app.py')
 app = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(app)
@@ -67,6 +69,32 @@ class AuthTests(unittest.TestCase):
     def test_private_api_requires_login(self):
         self.assertEqual(self.call('/api/status')[0], 401)
         self.assertEqual(self.call('/api/search?q=test')[0], 401)
+        self.assertEqual(self.call('/api/archive')[0], 401)
+        self.assertEqual(self.call('/api/archive/export')[0], 401)
+        self.assertEqual(self.call('/api/archive/file/SAL-' + 'A' * 24)[0], 401)
+
+    def test_archive_disabled_and_control_requires_csrf(self):
+        self.login()
+        with patch.object(app.archive_client, 'enabled', return_value=False):
+            self.assertEqual(self.call('/api/archive')[1], {'enabled': False, 'items': []})
+        with patch.object(app.archive_client, 'call') as service:
+            self.assertEqual(self.call('/api/archive/control', {'action': 'pause'})[0], 403)
+            service.assert_not_called()
+
+    def test_archive_proxy_does_not_forward_arbitrary_url_or_credentials(self):
+        csrf = self.login()
+        with patch.object(app.archive_client, 'call', return_value={'ok': True}) as service:
+            self.assertEqual(self.call('/api/archive/control', {'action': 'pause', 'url': 'http://attacker', 'token': 'must-not-forward'}, csrf)[0], 200)
+            service.assert_called_once_with('/control', {'action': 'pause'})
+
+    def test_archive_bulk_stream_is_disabled_on_public_tunnel_by_default(self):
+        self.login()
+        request = urllib.request.Request(self.base + '/api/archive/file/SAL-' + 'A' * 24, headers={'X-Forwarded-Proto': 'https'})
+        with patch.object(app.archive_client, 'open_request') as upstream:
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.client.open(request)
+            self.assertEqual(error.exception.code, 403)
+            upstream.assert_not_called()
 
     def test_session_and_invalid_password(self):
         self.assertEqual(self.call('/api/login', {'username': 'admin', 'password': 'wrong'})[0], 401)

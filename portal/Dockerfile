@@ -1,6 +1,7 @@
 FROM python:3.13-slim
 WORKDIR /app
 COPY portal/app.py ./app.py
+COPY portal/archive_client.py ./archive_client.py
 COPY portal/static ./static
 USER 1000:1000
 EXPOSE 8080

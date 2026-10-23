@@ -1,0 +1,18 @@
+FROM debian:bookworm-slim AS build
+ARG TELEGRAM_BOT_API_REF=e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git cmake clang make gperf libssl-dev zlib1g-dev \
+    && git init /source && cd /source \
+    && git remote add origin https://github.com/tdlib/telegram-bot-api.git \
+    && git fetch --depth 1 origin "${TELEGRAM_BOT_API_REF}" && git checkout --detach FETCH_HEAD \
+    && git submodule update --init --recursive --depth 1 \
+    && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/opt/telegram \
+    && cmake --build build --target install -j 2
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 zlib1g \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /var/lib/telegram-bot-api && chown 1000:1000 /var/lib/telegram-bot-api
+COPY --from=build /opt/telegram/bin/telegram-bot-api /usr/local/bin/telegram-bot-api
+USER 1000:1000
+WORKDIR /var/lib/telegram-bot-api
+ENTRYPOINT ["telegram-bot-api"]
+CMD ["--local", "--http-ip-address=0.0.0.0", "--http-port=8081", "--dir=/var/lib/telegram-bot-api", "--temp-dir=/var/lib/telegram-bot-api/tmp", "--verbosity=0"]

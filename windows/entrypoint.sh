@@ -15,5 +15,6 @@ case "${1:-configure}" in
     ;;
   configure) exec bash /usr/local/bin/configure-stack ;;
   provision) exec python3 /installer/portal/cloudflare_setup.py ;;
+  archive-configure) exec python3 /installer/portal/archive_setup.py ;;
   *) exec "$@" ;;
 esac

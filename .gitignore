@@ -13,3 +13,6 @@ __pycache__/
 .secrets/
 .env.portal
 portal-settings.json
+tools/
+.archive-data/
+.telegram-data/

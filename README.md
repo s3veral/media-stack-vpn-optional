@@ -17,6 +17,12 @@ e limite de tentativas de acesso. As chaves dos servicos permanecem no backend.
 O aplicativo le as configuracoes dos outros containers como somente leitura;
 nao recebe acesso ao socket Docker.
 
+O arquivo em nuvem opcional inclui **Drive para todos os arquivos** e **Telegram
+tambem para os de ate 2.000 MB**, sem dividir arquivos ou remover os originais.
+A aba **Nuvem** pesquisa nome, codigo, categoria, descricao e caminho; mostra
+filas independentes, links privados, espaco do Drive, pausa/retomada e exportacao
+do catalogo. Filmes, series, fotos, musicas e outros arquivos sao aceitos.
+
 ## TrueNAS SCALE
 
 Execute no shell do TrueNAS:
@@ -47,6 +53,7 @@ O portal fica em `/mnt/<pool-configs>/docker/sala`, separado do Compose original
 Requisito: [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/)
 aberto, usando WSL 2 e **Linux containers**. Nao use o script TrueNAS no PowerShell.
 Nao e necessario instalar Python, Bash ou Git no Windows.
+Para o arquivo em nuvem, use Docker Compose 2.24 ou superior (Docker Desktop atual).
 
 No PowerShell (usuario normal):
 
@@ -66,7 +73,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-i
 ```
 
 O instalador cria `movies`, `tv`, `downloads/torrent` e `downloads/crossseed`
-nessa pasta, monta tudo como `/media` nos containers e usa volumes nomeados para
+nessa pasta, mais `photos` e `music`, monta tudo como `/media` nos containers e usa volumes nomeados para
 as configuracoes e bancos SQLite. Discos locais sao suportados; compartilhamentos
 SMB/UNC nao sao configurados automaticamente. Em NTFS, importacoes podem copiar
 arquivos em vez de usar hardlinks; reserve espaco para downloads e biblioteca.
@@ -144,6 +151,120 @@ Radarr/Sonarr e dos seus indexadores; o painel nao adiciona fontes de conteudo.
 A capacidade exibida e a do filesystem montado em `/media`, nao a memoria/CPU
 do host. No Docker Desktop, confira se a pasta escolhida corresponde ao disco
 que deseja monitorar. Imagens de capas sao carregadas do TMDB pelo navegador.
+
+## Arquivo Drive + Telegram
+
+Ative essa opcao no instalador Windows ou TrueNAS. A stack local funciona sem
+ela; nenhuma credencial e obrigatoria para usar ARR/homepage local.
+
+### Regra de armazenamento
+
+- Todos os arquivos elegiveis vao ao Drive. Os de ate 2.000 MB tambem vao ao Telegram.
+- Arquivos maiores ficam **somente no Drive**, sem fragmentacao ou transcodificacao.
+- Fotos sao enviadas como documentos para preservar bytes e metadados, sem recompressao.
+- Downloads incompletos, pastas `downloads`/`incomplete`, arquivos temporarios,
+  caminhos ocultos e links simbolicos nao entram. Coloque o acervo final na pasta de midia.
+- Sao necessarias duas observacoes estaveis, com pelo menos 120 segundos, antes de catalogar.
+  A primeira varredura calcula SHA256/MD5 lendo os arquivos: em 3 TB, isso pode levar horas.
+- Conteudos identicos sao deduplicados; um codigo `SAL-...` identifica o conteudo.
+  Titulos/descricoes usam `.nfo` quando existir; caso contrario, nome e pasta.
+- O Drive confirma MD5 e tamanho; Telegram confirma recebimento e tamanho, **nao** checksum remoto.
+  Falhas ficam visiveis e sao repetidas com espera progressiva; os destinos nao dependem um do outro.
+
+O worker ve a midia em **somente leitura**, nao apaga originais, nao replica
+exclusoes e nao cria links publicos. Objetos no Drive ficam em
+`MediaStack/objects/<sha256>/original.ext`: novas versoes tem enderecos diferentes.
+O catalogo conserva os nomes/caminhos originais e os links das mensagens.
+Ele cataloga os envios desta instalacao, nao o historico anterior de um canal Telegram.
+
+### Autorizar o Drive
+
+No Windows, o instalador baixa um rclone portatil do site oficial, verifica SHA256
+do ZIP e inicia `connect-drive.ps1`. Voce pode importar um rclone.conf existente
+com `-DriveConfig 'C:\caminho\rclone.conf'`.
+
+1. Crie um aplicativo OAuth **Desktop app**, com Drive API habilitada, seguindo
+   o [guia oficial rclone](https://rclone.org/drive/#making-your-own-client-id).
+   Se usar OAuth externo, configure os usuarios/testes e o status de publicacao
+   conforme o guia, para nao depender de uma autorizacao temporaria de teste.
+2. Informe Client ID e Client secret somente no instalador local. **Nao envie aqui nem ao GitHub.**
+3. Autorize sua conta no navegador. O remote `sala` usa `drive.file`, que permite
+   acessar somente arquivos criados por esse aplicativo, nao o restante do Drive.
+4. A pasta remota padrao e `sala:MediaStack`; o instalador permite escolher outro remote Drive importado.
+
+Cloudflare continua com login por link, sem API token. O OAuth do Google e uma
+autorizacao separada e nao e substituido pelo login Cloudflare.
+
+No TrueNAS, execute `connect-drive.ps1` em um computador Windows, transfira o
+arquivo `.secrets/rclone/rclone.conf` por um canal privado e informe o caminho
+local no NAS quando solicitado. Nao cole o conteudo em mensagens ou logs.
+
+### Preparar Telegram
+
+Crie um bot **exclusivo** no [BotFather](https://t.me/BotFather), crie um canal
+**privado** e adicione o bot como administrador com permissao para publicar.
+Obtenha seu `api_id` e `api_hash` em [my.telegram.org/apps](https://my.telegram.org/apps),
+como exige o [servidor oficial Bot API](https://github.com/tdlib/telegram-bot-api).
+O instalador pede esses dados, token do bot e ID `-100...` do canal.
+Para descobrir o ID, no Telegram Desktop copie o link de uma mensagem do proprio
+canal privado e use `-100` seguido da parte numerica apos `t.me/c/`.
+O link privado exige que sua conta Telegram seja membro do canal.
+
+O instalador confirma que o bot e exclusivo antes de chamar `logOut` na API
+publica e passa a usar o servidor local. Nao reutilize um bot de outro aplicativo.
+A imagem e compilada a partir de um commit fixo do codigo oficial Telegram;
+a primeira compilacao pode demorar varios minutos e precisa de memoria livre.
+O endpoint Bot API e o worker nao publicam portas no host e ficam numa rede
+separada; somente a homepage acessa o worker com uma chave privada.
+
+**Canal privado nao e criptografia ponta a ponta.** Telegram e Google armazenam
+essas copias nos seus servicos; considere isso antes de incluir fotos sensiveis.
+
+### Uso, reproducao e recuperacao
+
+Na aba **Nuvem**, pesquise e abra a mensagem Telegram ou o arquivo privado no
+Drive. `Abrir aqui` usa leitura por intervalos do Drive na rede local; MP4, fotos
+e audio dependem dos codecs suportados pelo navegador. Nao ha transcodificacao
+automatica e nem todo MKV/HEIC/RAW pode ser exibido. No acesso externo via
+Cloudflare, a leitura de midia pelo painel fica desativada por padrao: use
+**Abrir no Drive** ou **Abrir no Telegram**, sem passar os arquivos pelo tunnel.
+Pausar impede novos envios; os que ja iniciaram podem terminar.
+
+A cota do Drive e consultada a cada hora. 5 TB totais nao significam 5 TB livres;
+reserve margem para uso existente e novas versoes. O limite padrao de upload
+e `8M` para Drive (pode mudar no setup); 3 TB iniciais podem levar varios dias,
+dependendo do upload e das cotas do provedor. A cota/velocidade Telegram e independente.
+
+O catalogo JSON e copiado ao Drive a cada hora em `MediaStack/catalog/latest.json`,
+com um snapshot diario datado, sem limpeza automatica. Apenas `latest.json`
+e substituido; objetos de midia nao sao sobrescritos. Exporte tambem pela Home
+e guarde uma copia offline. Estados pendentes podem existir no backup de catalogo;
+ele nao substitui as midias e nem um teste de restauracao.
+
+Credenciais ficam somente em `.secrets/archive` e `.secrets/rclone`, fora do Git.
+O worker precisa atualizar o OAuth em `rclone.conf`. No Windows, o catalogo usa
+o volume `archive-data`, e as sessoes Telegram usam `telegram-state`. No TrueNAS,
+os dados ficam em `.archive-data` e `.telegram-data` dentro da pasta `sala`.
+Nao execute `docker compose down -v` se quiser preservar esses dados.
+
+Para importar um catalogo exportado, **pare o worker** e use um catalogo local
+vazio; a importacao recusa substituir um existente. Exemplo Windows:
+
+```powershell
+.\stack.ps1 stop archive
+.\stack.ps1 run --rm --no-deps -v 'C:\Backups:/restore:ro' archive python archive.py --import-catalog /restore/sala-catalogo.json
+.\stack.ps1 up -d archive
+```
+
+As credenciais e o remote/caminho Drive devem corresponder ao backup. A importacao
+restaura o indice, nao baixa/apaga arquivos automaticamente. Mantenha tambem uma
+copia privada das configuracoes e teste uma recuperacao de amostra antes de confiar
+no backup. Servicos de nuvem nao garantem risco zero de perda.
+
+Para desligar apenas os envios, reexecute o instalador Windows com `-Archive Off`
+ou escolha nao no TrueNAS. Dados, sessoes e copias remotas sao preservados.
+
+## Gerenciamento
 
 Gerenciar depois da instalacao:
 

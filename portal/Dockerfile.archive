@@ -1,0 +1,9 @@
+FROM rclone/rclone:latest AS rclone
+FROM python:3.13-slim
+COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
+WORKDIR /app
+COPY portal/archive.py /app/archive.py
+RUN mkdir -p /data && chown 1000:1000 /data && rclone version
+USER 1000:1000
+EXPOSE 8082
+CMD ["python", "-u", "archive.py"]
