@@ -103,5 +103,5 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (KeyError, OSError, ValueError, subprocess.CalledProcessError) as error:
+    except (KeyError, OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         raise SystemExit(f'Falha ao instalar homepage: {error}') from None

@@ -95,7 +95,7 @@ Os paines ficam em `localhost` no Windows por padrao:
 O Windows gera uma senha aleatoria no primeiro uso, salva em `.settings.json`
 e `.env`; ela e reutilizada nas proximas execucoes e exibida ao final. Trate esses
 arquivos como privados. A configuracao automatica pode levar varios minutos.
-Se uma etapa falhar, o instalador sinaliza o erro e os containers ficam disponiveis
+Se uma etapa falhar, o instalador sinaliza a integracao pendente e os containers ficam disponiveis
 para diagnostico; reexecute para tentar novamente. Indexadores do Prowlarr,
 idiomas/provedores do Bazarr e o scan inicial do Qui continuam manuais.
 As automacoes do Qui herdadas do upstream incluem limpeza de downloads antigos;

@@ -161,7 +161,8 @@ Invoke-Compose --profile setup build setup
 Invoke-Compose --profile setup run --rm --no-deps setup prepare
 Invoke-Compose up -d --build
 if (-not $SkipConfigure) {
-    Invoke-Compose --profile setup run --rm --no-deps setup configure
+    try { Invoke-Compose --profile setup run --rm --no-deps setup configure }
+    catch { Write-Warning 'Algumas integracoes precisam de ajuste (veja as mensagens acima). Os containers seguem ativos; conclua o setup nas interfaces ou reexecute o instalador.' }
 }
 if ($remoteEnabled) {
     $tunnelMetadata = Join-Path $InstallDir '.secrets\tunnel.json'
@@ -188,6 +189,6 @@ Write-Host 'Stack iniciada. Jellyfin: http://localhost:8096 | Seerr: http://loca
 Write-Host 'Homepage Sala: http://localhost:8090'
 if ($remoteEnabled) { Write-Host "Acesso externo: https://$PublicHostname" }
 Write-Host 'qBittorrent: http://localhost:8080 | Radarr: http://localhost:7878 | Sonarr: http://localhost:8989'
-Write-Host "Login configurado: admin / $adminPass (tambem salvo em $settingsPath)."
+Write-Host "Login da homepage: admin / $adminPass (tambem salvo em $settingsPath)."
 Write-Host 'Finalize os indexadores no Prowlarr e idiomas/provedores no Bazarr.'
 Write-Host "Gerenciar: cd `"$InstallDir`"; .\stack.ps1 ps"
