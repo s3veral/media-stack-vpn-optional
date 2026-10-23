@@ -1,0 +1,147 @@
+name: media-stack
+
+x-app: &app
+  restart: unless-stopped
+  environment: &env
+    PUID: "1000"
+    PGID: "1000"
+    TZ: ${TZ:-America/Sao_Paulo}
+
+services:
+  qbittorrent:
+    <<: *app
+    container_name: qbittorrent
+    image: ghcr.io/hotio/qbittorrent:latest
+    environment:
+      <<: *env
+      UMASK: "002"
+      WEBUI_PORTS: 8080/tcp
+      VPN_ENABLED: ${VPN_ENABLED:-false}
+      VPN_CONF: wg0
+      VPN_PROVIDER: generic
+      VPN_LAN_NETWORK: ${VPN_LAN_NETWORK:-192.168.1.0/24}
+      VPN_LAN_LEAK_ENABLED: "false"
+      VPN_AUTO_PORT_FORWARD: "false"
+      VPN_NAMESERVERS: ${VPN_NAMESERVERS:-}
+      PRIVOXY_ENABLED: "false"
+      UNBOUND_ENABLED: "false"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - qbittorrent-config:/config
+      - "${MEDIA_PATH:?Run install-windows.ps1 first}:/media"
+  radarr:
+    <<: *app
+    container_name: radarr
+    image: lscr.io/linuxserver/radarr:latest
+    ports: ["127.0.0.1:7878:7878"]
+    volumes:
+      - radarr-config:/config
+      - "${MEDIA_PATH}:/media"
+  sonarr:
+    <<: *app
+    container_name: sonarr
+    image: lscr.io/linuxserver/sonarr:latest
+    ports: ["127.0.0.1:8989:8989"]
+    volumes:
+      - sonarr-config:/config
+      - "${MEDIA_PATH}:/media"
+  prowlarr:
+    <<: *app
+    container_name: prowlarr
+    image: lscr.io/linuxserver/prowlarr:latest
+    ports: ["127.0.0.1:9696:9696"]
+    volumes: ["prowlarr-config:/config"]
+  bazarr:
+    <<: *app
+    container_name: bazarr
+    image: lscr.io/linuxserver/bazarr:latest
+    ports: ["127.0.0.1:6767:6767"]
+    volumes:
+      - bazarr-config:/config
+      - "${MEDIA_PATH}:/media"
+  jellyfin:
+    <<: *app
+    container_name: jellyfin
+    image: lscr.io/linuxserver/jellyfin:latest
+    ports: ["127.0.0.1:8096:8096"]
+    volumes:
+      - jellyfin-config:/config
+      - "${MEDIA_PATH}:/media"
+  seerr:
+    restart: unless-stopped
+    container_name: seerr
+    image: ghcr.io/seerr-team/seerr:latest
+    init: true
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      LOG_LEVEL: info
+      PORT: "5055"
+    ports: ["127.0.0.1:5055:5055"]
+    volumes: ["seerr-config:/app/config"]
+  profilarr:
+    <<: *app
+    container_name: profilarr
+    image: ghcr.io/dictionarry-hub/profilarr:latest
+    ports: ["127.0.0.1:6868:6868"]
+    volumes: ["profilarr-config:/config"]
+  flaresolverr:
+    <<: *app
+    container_name: flaresolverr
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    ports: ["127.0.0.1:8191:8191"]
+  qui:
+    restart: unless-stopped
+    container_name: qui
+    image: ghcr.io/autobrr/qui:latest
+    user: "1000:1000"
+    ports: ["127.0.0.1:7476:7476"]
+    volumes:
+      - qui-config:/config
+      - "${MEDIA_PATH}:/media"
+  dozzle:
+    restart: unless-stopped
+    container_name: dozzle
+    image: amir20/dozzle:latest
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+    ports: ["127.0.0.1:8888:8080"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "dozzle-config:/data"]
+
+  # Runs only during install/reconfigure. It reuses the upstream API setup.
+  setup:
+    profiles: [setup]
+    build:
+      context: .
+      dockerfile: windows/Dockerfile.setup
+    environment:
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:?Run install-windows.ps1 first}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost.local}
+      VPN_ENABLED: ${VPN_ENABLED:-false}
+      QBIT_NETWORK_INTERFACE: ${QBIT_NETWORK_INTERFACE:-}
+      TZ: ${TZ:-America/Sao_Paulo}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./wireguard:/wireguard:ro
+      - qbittorrent-config:/configs/qbittorrent
+      - radarr-config:/configs/radarr
+      - sonarr-config:/configs/sonarr
+      - prowlarr-config:/configs/prowlarr
+      - bazarr-config:/configs/bazarr
+      - jellyfin-config:/configs/jellyfin
+      - seerr-config:/configs/seerr
+      - profilarr-config:/configs/profilarr
+      - qui-config:/configs/qui
+
+volumes:
+  qbittorrent-config:
+  radarr-config:
+  sonarr-config:
+  prowlarr-config:
+  bazarr-config:
+  jellyfin-config:
+  seerr-config:
+  profilarr-config:
+  qui-config:
+  dozzle-config:

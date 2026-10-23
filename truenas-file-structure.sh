@@ -16,7 +16,9 @@
 #   user: admin   password: changeme   email: admin@admin.com
 #
 # Run in the TrueNAS shell as root:
-#   sudo su -c "wget https://raw.githubusercontent.com/serversathome/ServersatHome/refs/heads/main/truenas-file-structure.sh && chmod +x truenas-file-structure.sh && bash truenas-file-structure.sh"
+#   sudo bash truenas-file-structure.sh
+# Fork: https://github.com/s3veral/media-stack-vpn-optional
+# VPN is optional: choose interactively, or pass --vpn / --no-vpn.
 # ============================================================================
 
 # ok()/warn()/todo() always succeed, so "cmd && ok ... || todo ..." is a safe
@@ -25,9 +27,18 @@
 set -uo pipefail
 
 # ── Defaults for every login this script creates ────────────────────────────
-ADMIN_USER="admin"
-ADMIN_PASS="changeme"
-ADMIN_EMAIL="admin@admin.com"
+ADMIN_USER="${ADMIN_USER:-admin}"
+ADMIN_PASS="${ADMIN_PASS:-changeme}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@admin.com}"
+VPN_CHOICE=""
+for arg in "$@"; do
+    case "$arg" in
+        --vpn) VPN_CHOICE=true ;;
+        --no-vpn) VPN_CHOICE=false ;;
+        --help|-h) echo "Usage: sudo bash $0 [--vpn | --no-vpn]"; exit 0 ;;
+        *) echo "Unknown argument: $arg" >&2; exit 1 ;;
+    esac
+done
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 info() { echo ">>> $*"; }
@@ -207,6 +218,38 @@ MEDIA_SUBDIRECTORIES=("movies" "tv" "downloads" "downloads/torrent" "downloads/c
 DOCKER_COMPOSE_PATH="/mnt/$CONFIG_POOL/docker"
 DOCKER_COMPOSE_FILE="$DOCKER_COMPOSE_PATH/docker-compose.yml"
 QBITTORRENT_WIREGUARD_DIR="/mnt/$CONFIG_POOL/configs/qbittorrent/wireguard"
+VPN_STATE_FILE="$DOCKER_COMPOSE_PATH/.vpn-enabled"
+# Read plain values only; never execute a saved settings file.
+VPN_DEFAULT=false
+if [ -f "$VPN_STATE_FILE" ]; then
+    VPN_DEFAULT=$(tr -d '\r\n' < "$VPN_STATE_FILE")
+    [[ "$VPN_DEFAULT" =~ ^(true|false)$ ]] || die "Invalid VPN setting in $VPN_STATE_FILE"
+elif [ -f "$DOCKER_COMPOSE_FILE" ] && grep -Eq 'VPN_ENABLED[=:][[:space:]]*true' "$DOCKER_COMPOSE_FILE"; then
+    VPN_DEFAULT=true
+fi
+if [ -z "$VPN_CHOICE" ]; then
+    echo "Torrent works without a VPN. Direct mode uses your connection's public IP."
+    while true; do
+        read -rp "Usar VPN WireGuard? [s/n] (Enter: $VPN_DEFAULT): " answer || die "No selection received. Use --vpn or --no-vpn."
+        case "$answer" in
+            '') VPN_CHOICE="$VPN_DEFAULT"; break ;;
+            [sSyY]|[sS][iI][mM]|[yY][eE][sS]) VPN_CHOICE=true; break ;;
+            [nN]|[nN][aA][oO]|[nN][oO]) VPN_CHOICE=false; break ;;
+            *) echo "Responda s ou n." ;;
+        esac
+    done
+fi
+VPN_ENABLED="$VPN_CHOICE"
+VPN_NAMESERVERS=""
+QBIT_NETWORK_INTERFACE=""
+QBIT_PEER_PORTS=""
+if [ "$VPN_ENABLED" = true ]; then
+    VPN_NAMESERVERS=wg
+    QBIT_NETWORK_INTERFACE=wg0
+else
+    QBIT_PEER_PORTS=$'      - 6881:6881/tcp\n      - 6881:6881/udp'
+fi
+export VPN_ENABLED QBIT_NETWORK_INTERFACE
 
 # set_perms <path> [owner]   (default root:apps, 770)
 set_perms() {
@@ -274,6 +317,7 @@ for subdir in "${MEDIA_SUBDIRECTORIES[@]}"; do
 done
 
 create_directory "$DOCKER_COMPOSE_PATH"
+printf '%s\n' "$VPN_ENABLED" > "$VPN_STATE_FILE"
 
 # ── docker-compose.yml ──────────────────────────────────────────────────────
 # Regenerated every run (it has to reflect the pools you just chose), but an
@@ -413,13 +457,14 @@ services:
     restart: unless-stopped
     ports:
       - 8080:8080
+$QBIT_PEER_PORTS
     environment:
       - PUID=568
       - PGID=568
       - UMASK=002
       - TZ=$TZ_VALUE
       - WEBUI_PORTS=8080/tcp
-      - VPN_ENABLED=true
+      - VPN_ENABLED=$VPN_ENABLED
       - VPN_CONF=wg0
       - VPN_PROVIDER=generic
       - VPN_LAN_NETWORK=$CIDR_NETWORK,10.8.0.0/24
@@ -431,7 +476,7 @@ services:
       - VPN_AUTO_PORT_FORWARD=false
       - VPN_PORT_REDIRECTS=
       - VPN_HEALTHCHECK_ENABLED=false
-      - VPN_NAMESERVERS=wg
+      - VPN_NAMESERVERS=$VPN_NAMESERVERS
       - VPN_INTERFACE_PREFIXES=
       - PRIVOXY_ENABLED=false
       - UNBOUND_ENABLED=false
@@ -508,13 +553,15 @@ docker info >/dev/null 2>&1 \
 
 # WireGuard config for qBittorrent (hotio expects /config/wireguard/wg0.conf).
 create_directory "$QBITTORRENT_WIREGUARD_DIR"
-if [ -s "$QBITTORRENT_WIREGUARD_DIR/wg0.conf" ]; then
+if [ "$VPN_ENABLED" != true ]; then
+    echo "VPN disabled: no WireGuard file required. Existing profiles are preserved."
+elif [ -s "$QBITTORRENT_WIREGUARD_DIR/wg0.conf" ]; then
     echo "WireGuard config already present at $QBITTORRENT_WIREGUARD_DIR/wg0.conf (leaving it alone)."
 else
     echo "Please paste your WireGuard VPN configuration below by using SHIFT+INS to paste (press ENTER then Ctrl+D when done):"
     WG_CONFIG=$(cat)
     if [ -z "${WG_CONFIG//[[:space:]]/}" ]; then
-        warn "No WireGuard configuration entered. qBittorrent will not start until $QBITTORRENT_WIREGUARD_DIR/wg0.conf exists."
+        die "VPN selected but no WireGuard profile entered. Re-run with --no-vpn for direct access."
     else
         printf '%s\n' "$WG_CONFIG" > "$QBITTORRENT_WIREGUARD_DIR/wg0.conf"
         chown root:apps "$QBITTORRENT_WIREGUARD_DIR/wg0.conf"
@@ -751,8 +798,8 @@ configure_qbittorrent() {
     if docker exec qbittorrent curl --version >/dev/null 2>&1; then QB_MODE="exec"; fi
     # QB_URL is used both from inside the container and from the host; inside
     # the container localhost:8080 is the WebUI itself, so the same URL works.
-    wait_for "qBittorrent WebUI (needs the VPN tunnel up)" 300 qb_up \
-        || { todo "qBittorrent never came up. Check the VPN config: docker logs qbittorrent"; return 1; }
+    wait_for "qBittorrent WebUI (VPN_ENABLED=$VPN_ENABLED)" 300 qb_up \
+        || { todo "qBittorrent never came up. Inspect: docker logs qbittorrent (VPN_ENABLED=$VPN_ENABLED)"; return 1; }
 
     # 1. A session for the setup calls (loopback; may be a bypass session).
     local tmp_pw
@@ -809,15 +856,15 @@ configure_qbittorrent() {
 
     # Connection / BitTorrent / Advanced per wiki.serversatho.me/en/qBittorrent:
     # no connection limits (-1 = box unchecked), no torrent queueing, more
-    # parallel checking, all torrent traffic bound to the VPN interface on
-    # every IPv4 address, and the Default disk IO type (0), which on hotio's
+    # parallel checking, traffic bound to wg0 only when VPN was selected,
+    # and the Default disk IO type (0), which on hotio's
     # default libtorrent 2.1 build is pread/pwrite. Installs made when this
     # script set POSIX-compliant (2) are moved back to Default;
     # qBittorrent reads it at startup, so it applies from the next restart
     # (Watchtower's next update, or: docker restart qbittorrent).
-    code=$(qb_code --data-urlencode 'json={"max_connec":-1,"max_connec_per_torrent":-1,"max_uploads":-1,"max_uploads_per_torrent":-1,"queueing_enabled":false,"max_active_checking_torrents":3,"current_network_interface":"wg0","current_interface_address":"0.0.0.0","disk_io_type":0}' \
+    code=$(qb_code --data-urlencode "json=$(jbuild '{"max_connec":-1,"max_connec_per_torrent":-1,"max_uploads":-1,"max_uploads_per_torrent":-1,"queueing_enabled":False,"max_active_checking_torrents":3,"current_network_interface":os.environ["QBIT_NETWORK_INTERFACE"],"current_interface_address":"0.0.0.0","listen_port":6881,"random_port":False,"disk_io_type":0}')" \
         "$QB_URL/api/v2/app/setPreferences")
-    if qb_2xx "$code"; then ok "qBittorrent: connection limits off, queueing off, 3 checking torrents, interface wg0 / all IPv4, disk IO type Default (pread/pwrite)"; else
+    if qb_2xx "$code"; then ok "qBittorrent: network interface '${QBIT_NETWORK_INTERFACE:-Any interface}', peer port 6881, VPN_ENABLED=$VPN_ENABLED"; else
         todo "qBittorrent: could not apply the connection/advanced settings (HTTP $code); set them in Tools > Options."; fi
 
     # Categories for Radarr and Sonarr, both saving straight into

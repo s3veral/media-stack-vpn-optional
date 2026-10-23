@@ -1,0 +1,55 @@
+name: Media stack checks
+on:
+  push:
+    paths: ['truenas-file-structure.sh', '*windows*', 'stack.ps1', 'compose*.yml', 'windows/**', 'tests/**', '.github/workflows/media-stack.yml']
+  pull_request:
+    paths: ['truenas-file-structure.sh', '*windows*', 'stack.ps1', 'compose*.yml', 'windows/**', 'tests/**', '.github/workflows/media-stack.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n truenas-file-structure.sh && bash -n windows/entrypoint.sh
+      - run: python3 -m unittest discover -s tests -v
+      - name: Generate portable setup and check Bash syntax
+        run: python3 windows/build_configure.py | bash -n
+      - name: Parse PowerShell and prepare direct mode
+        shell: pwsh
+        run: |
+          foreach ($file in @('bootstrap-windows.ps1','install-windows.ps1','stack.ps1')) {
+            $parseErrors = $null
+            [Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$null, [ref]$parseErrors) | Out-Null
+            if ($parseErrors) { throw ($parseErrors | Out-String) }
+          }
+          ./install-windows.ps1 -InstallDir "$PWD/.test-output/install" -MediaPath "$PWD/.test-output/media" -Vpn Off -GenerateOnly
+          ./tests/test_windows.ps1
+      - name: Compose direct and VPN variants
+        env:
+          MEDIA_PATH: /tmp/media-stack-ci
+          ADMIN_PASS: ci-only-not-a-real-secret
+        run: |
+          docker compose -f compose.windows.yml -f compose.direct.yml config --quiet
+          docker compose -f compose.windows.yml -f compose.vpn.yml config --quiet
+          docker compose -f compose.windows.yml --profile setup build setup
+      - name: Direct mode torrent smoke test
+        env:
+          MEDIA_PATH: ${{ github.workspace }}/.test-output/media
+          ADMIN_PASS: ci-only-not-a-real-secret
+          VPN_ENABLED: 'false'
+        run: |
+          mkdir -p "$MEDIA_PATH/downloads"
+          chmod -R 777 "$MEDIA_PATH"
+          docker compose -f compose.windows.yml -f compose.direct.yml up -d qbittorrent
+          python3 tests/smoke_direct.py
+      - name: Diagnostics
+        if: failure()
+        run: docker logs qbittorrent || true
+      - name: Cleanup
+        if: always()
+        env:
+          MEDIA_PATH: /tmp/media-stack-ci
+          ADMIN_PASS: ci-only-not-a-real-secret
+        run: docker compose -f compose.windows.yml -f compose.direct.yml down

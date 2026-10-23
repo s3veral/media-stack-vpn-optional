@@ -1,0 +1,5 @@
+services:
+  qbittorrent:
+    ports:
+      - "6881:6881/tcp"
+      - "6881:6881/udp"

@@ -1,3 +1,141 @@
+# Media Stack: TrueNAS e Windows, VPN opcional
+
+Fork pessoal de [Servers@Home](https://github.com/serversathome/ServersatHome),
+baseado no commit `ef1d9596165c2c5beaf069336a2f86947fc02615`.
+Os materiais e creditos originais estao preservados abaixo.
+
+BitTorrent nao precisa de VPN. Escolha **com WireGuard** ou **sem VPN** na
+instalacao. Sem VPN, o trafego sai pela sua conexao normal e os peers veem
+seu IP publico. Com VPN, o cliente fica vinculado a `wg0`; o instalador nao
+muda automaticamente para conexao direta se o tunel falhar.
+
+## TrueNAS SCALE
+
+Execute no shell do TrueNAS:
+
+```bash
+curl -fL https://raw.githubusercontent.com/s3veral/media-stack-vpn-optional/main/truenas-file-structure.sh -o /tmp/media-stack-install.sh && sudo bash /tmp/media-stack-install.sh
+```
+
+O menu pergunta se deseja VPN. Enter usa `false` em uma instalacao nova e
+preserva a escolha anterior nas proximas execucoes. Tambem existem os argumentos
+`--vpn` e `--no-vpn`. Ao migrar do script original, o modo VPN existente e
+detectado e mantido como padrao. O perfil WireGuard so e solicitado no modo VPN.
+
+O script preserva a estrutura ZFS e a configuracao automatica original. Tambem
+ajusta a interface do qBittorrent: `wg0` com VPN, qualquer interface sem VPN.
+No modo direto publica a porta P2P 6881 TCP/UDP. O estado e salvo em
+`/mnt/<pool-configs>/docker/.vpn-enabled`. Reexecutar o script recria o Compose,
+guardando uma copia do anterior. Os logins padrao do instalador TrueNAS original
+continuam `admin` / `changeme`; altere-os nas interfaces.
+
+## Windows com Docker Desktop
+
+Requisito: [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/)
+aberto, usando WSL 2 e **Linux containers**. Nao use o script TrueNAS no PowerShell.
+Nao e necessario instalar Python, Bash ou Git no Windows.
+
+No PowerShell (usuario normal):
+
+```powershell
+Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/s3veral/media-stack-vpn-optional/main/bootstrap-windows.ps1' -OutFile "$env:TEMP\media-stack-install.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-install.ps1"
+```
+
+Escolha a pasta da biblioteca (por exemplo `D:\Media`) e responda `n` para usar
+sem VPN. Instalacao padrao em `%USERPROFILE%\MediaStack`. Exemplo sem perguntas:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-install.ps1" -Vpn Off -MediaPath 'D:\Media'
+```
+
+O instalador cria `movies`, `tv`, `downloads/torrent` e `downloads/crossseed`
+nessa pasta, monta tudo como `/media` nos containers e usa volumes nomeados para
+as configuracoes e bancos SQLite. Discos locais sao suportados; compartilhamentos
+SMB/UNC nao sao configurados automaticamente. Em NTFS, importacoes podem copiar
+arquivos em vez de usar hardlinks; reserve espaco para downloads e biblioteca.
+
+A stack inclui qBittorrent, Radarr, Sonarr, Prowlarr, Bazarr, Jellyfin, Seerr,
+Profilarr, FlareSolverr, Qui e Dozzle. Um container temporario de setup reutiliza
+as rotinas de configuracao do instalador TrueNAS (sem executar ZFS). Ele precisa
+do socket Docker para reiniciar o qBittorrent e ler as configuracoes. Sai ao fim
+da configuracao. Watchtower nao e iniciado no Windows; atualize manualmente.
+
+Os paines ficam em `localhost` no Windows por padrao:
+
+| Servico | Endereco |
+| --- | --- |
+| Jellyfin | http://localhost:8096 |
+| Seerr | http://localhost:5055 |
+| qBittorrent | http://localhost:8080 |
+| Radarr | http://localhost:7878 |
+| Sonarr | http://localhost:8989 |
+| Prowlarr | http://localhost:9696 |
+| Bazarr | http://localhost:6767 |
+| Profilarr | http://localhost:6868 |
+| Qui | http://localhost:7476 |
+| Dozzle | http://localhost:8888 |
+
+O Windows gera uma senha aleatoria no primeiro uso, salva em `.settings.json`
+e `.env`; ela e reutilizada nas proximas execucoes e exibida ao final. Trate esses
+arquivos como privados. A configuracao automatica pode levar varios minutos.
+Se uma etapa falhar, o instalador sinaliza o erro e os containers ficam disponiveis
+para diagnostico; reexecute para tentar novamente. Indexadores do Prowlarr,
+idiomas/provedores do Bazarr e o scan inicial do Qui continuam manuais.
+As automacoes do Qui herdadas do upstream incluem limpeza de downloads antigos;
+revise-as na interface antes de adicionar sua biblioteca.
+
+Gerenciar depois da instalacao:
+
+```powershell
+cd "$env:USERPROFILE\MediaStack"
+.\stack.ps1 ps
+.\stack.ps1 logs --tail 100 qbittorrent
+.\stack.ps1 stop
+.\stack.ps1 up -d
+# Atualizacao manual:
+.\stack.ps1 pull
+.\stack.ps1 up -d
+```
+
+Trocar de modo sem reinstalar a biblioteca:
+
+```powershell
+.\install-windows.ps1 -Vpn Off
+.\install-windows.ps1 -Vpn On -WireGuardConfig 'C:\caminho\cliente.conf' -LanNetwork '192.168.1.0/24'
+```
+
+O perfil precisa conter `DNS`, `PrivateKey`, `Address`, `PublicKey`, `Endpoint`
+e rota para a internet em `AllowedIPs`. Mantenha-o fora do Git. O arquivo do host
+em `wireguard/wg0.conf` e copiado para o volume privado do qBittorrent apenas
+quando VPN esta ativada. No modo VPN, as portas P2P do host nao sao publicadas;
+se houver port forwarding no seu provedor/VPS, ajuste a porta nas configuracoes
+do qBittorrent e no firewall/encaminhamento do servidor. O padrao e 6881.
+
+Sem VPN, downloads funcionam mesmo sem porta de entrada. Para receber mais
+conexoes, voce pode encaminhar 6881 TCP/UDP no roteador para o Windows e permitir
+essa porta no firewall. CGNAT pode impedir conexoes de entrada e nao impede
+conexoes de saida. A WebUI 8080 e os outros paines nao precisam desse encaminhamento.
+
+Opcoes de preparacao: `-GenerateOnly` grava a estrutura sem iniciar containers;
+`-SkipConfigure` inicia a stack sem executar a configuracao via APIs. Use sempre
+a mesma pasta `-InstallDir` ao atualizar. `docker compose down -v` apaga volumes
+de configuracao; `stop` apenas para os servicos.
+
+## Validacao e limites
+
+Testes locais: parser PowerShell, sintaxe Bash, configuracoes Compose nos dois
+modos, selecao/persistencia de VPN, mudanca da interface e geracao do setup
+portavel. O workflow verifica tambem o build do setup e um download de uma
+fixture local via BitTorrent **sem VPN**, sem baixar midia de terceiros.
+Os fluxos completos de onboarding das APIs dos aplicativos dependem das imagens
+`latest` e podem exigir ajustes conforme os projetos mudam. VPN requer um
+servidor/perfil real para validar o handshake; nenhum segredo esta no repositorio.
+
+---
+
+## README original do Servers@Home
+
 <!-- Banner image -->
 <p align="center">
   <img src="https://raw.githubusercontent.com/serversathome/ServersatHome/main/servers-at-home-github-preview.png" alt="Servers@Home Banner" />

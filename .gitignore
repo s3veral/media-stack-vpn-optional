@@ -1,0 +1,12 @@
+.env
+.settings.json
+.settings.json.bak
+.vpn-enabled
+wireguard/
+configs/
+media/
+*.conf
+*.cookie
+*.log
+__pycache__/
+.test-output/

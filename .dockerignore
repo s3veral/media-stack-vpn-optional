@@ -1,0 +1,6 @@
+**
+!truenas-file-structure.sh
+!windows
+!windows/Dockerfile.setup
+!windows/build_configure.py
+!windows/entrypoint.sh

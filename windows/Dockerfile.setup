@@ -1,0 +1,9 @@
+FROM docker:cli
+RUN apk add --no-cache bash curl python3 coreutils grep
+WORKDIR /installer
+COPY truenas-file-structure.sh ./
+COPY windows/build_configure.py windows/entrypoint.sh ./windows/
+RUN python3 windows/build_configure.py > /usr/local/bin/configure-stack \
+    && bash -n /usr/local/bin/configure-stack
+ENTRYPOINT ["bash", "/installer/windows/entrypoint.sh"]
+CMD ["configure"]
