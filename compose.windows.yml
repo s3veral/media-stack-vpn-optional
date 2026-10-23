@@ -36,8 +36,9 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    command: [tunnel, --no-autoupdate, run, --token-file, /run/secrets/tunnel_token]
-    secrets: [tunnel_token]
+    command: [tunnel, --config, /etc/cloudflared/config.yml, --no-autoupdate, run]
+    volumes:
+      - ./.secrets/runtime:/etc/cloudflared:ro
     depends_on: [dashboard]
   qbittorrent:
     <<: *app
@@ -178,7 +179,3 @@ volumes:
   profilarr-config:
   qui-config:
   dozzle-config:
-
-secrets:
-  tunnel_token:
-    file: ./.secrets/tunnel_token

@@ -22,3 +22,9 @@ if (-not (Test-Path (Join-Path $install 'wireguard/wg0.conf'))) { throw 'Disabli
 if ($last.VpnEnabled) { throw 'Disabling VPN failed.' }
 if (-not (Test-Path (Join-Path $install '.settings.json.bak'))) { throw 'Previous settings were not backed up.' }
 Write-Host 'PASS: Windows direct/VPN/direct, spaces in paths, saved credentials and preserved profile.'
+& (Join-Path $root 'install-windows.ps1') -InstallDir $install -MediaPath $media -Vpn Off -Remote On -GenerateOnly
+$remoteSettings = Get-Content (Join-Path $install '.settings.json') -Raw | ConvertFrom-Json
+if (-not $remoteSettings.RemoteEnabled) { throw 'Remote choice was not saved.' }
+if (-not (Test-Path (Join-Path $install '.secrets/runtime'))) { throw 'Runtime secrets directory is missing.' }
+if (Test-Path (Join-Path $install '.secrets/tunnel_token')) { throw 'Fresh browser-login install created a legacy token placeholder.' }
+Write-Host 'PASS: remote install can be prepared without requesting an API token or hostname before login.'

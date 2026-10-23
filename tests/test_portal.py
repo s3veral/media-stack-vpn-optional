@@ -126,45 +126,129 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn('apiKey', json.dumps(result))
 
 
-class CloudflareTests(unittest.TestCase):
-    def fake(self, records=None):
+class FakeCloudflared(cf.Cloudflared):
+    def __init__(self, folder, fail_dns=False, missing_cert=False):
+        super().__init__(folder)
         self.calls = []
-        def call(method, path, body=None):
-            self.calls.append((method, path, body))
-            if path.startswith('zones?'):
-                return [{'id': 'zone', 'name': 'exemplo.com.br', 'account': {'id': 'account'}}]
-            if 'dns_records?' in path:
-                return records or []
-            if 'cfd_tunnel?' in path:
-                return []
-            if path.endswith('/cfd_tunnel'):
-                return {'id': 'new-tunnel'}
-            if path.endswith('/configurations'):
-                return {'config': {}} if method == 'GET' else {}
-            if path.endswith('/token'):
-                return 'connector-token-test-only'
-            return {}
-        return call
+        self.fail_dns = fail_dns
+        self.missing_cert = missing_cert
 
-    def test_provision_subdomain_and_keep_api_token_out_of_saved_files(self):
+    def __call__(self, *args):
+        self.calls.append(args)
+        if args == ('tunnel', 'login') and not self.missing_cert:
+            (self.root / 'login-home/.cloudflared/cert.pem').write_text('fake-account-certificate')
+        if 'create' in args:
+            target = Path(args[args.index('--credentials-file') + 1])
+            target.write_text(json.dumps({'TunnelID': '12345678-1234-4234-8234-123456789abc',
+                                          'AccountTag': 'account', 'TunnelSecret': 'fake-tunnel-secret'}))
+        if 'route' in args and self.fail_dns:
+            raise RuntimeError('Hostname ja ocupado; nenhum DNS substituido.')
+
+
+class CloudflareTests(unittest.TestCase):
+    def test_browser_login_precedes_hostname_prompt_and_provisions(self):
         with tempfile.TemporaryDirectory() as folder:
-            result = cf.provision('sala.exemplo.com.br', 'api-token-test-only', folder, self.fake())
+            runner = FakeCloudflared(folder)
+            def prompt(_):
+                self.assertEqual(runner.calls, [('tunnel', 'login')])
+                return 'sala.exemplo.com.br'
+            result = cf.provision('', folder, runner=runner, prompt=prompt)
             self.assertEqual(result['hostname'], 'sala.exemplo.com.br')
-            self.assertEqual((Path(folder) / 'tunnel_token').read_text(), 'connector-token-test-only')
-            self.assertNotIn('api-token-test-only', (Path(folder) / 'tunnel.json').read_text())
-        write = next(body for method, path, body in self.calls if method == 'PUT')
-        self.assertEqual(write['config']['ingress'][0]['service'], 'http://dashboard:8080')
+            self.assertEqual(result['mode'], 'browser-login')
+            self.assertIn('route', runner.calls[-1])
+            self.assertNotIn('--overwrite-dns', str(runner.calls))
+            config = json.loads((Path(folder) / 'runtime/config.yml').read_text())
+            self.assertEqual(config['ingress'][0]['service'], 'http://dashboard:8080')
+            self.assertEqual(config['ingress'][0]['hostname'], 'sala.exemplo.com.br')
+            self.assertEqual(config['credentials-file'], '/etc/cloudflared/credentials.json')
+            self.assertFalse((Path(folder) / 'runtime/cert.pem').exists())
+            self.assertNotIn('fake-account-certificate', json.dumps(config))
 
-    def test_existing_unrelated_dns_is_not_overwritten(self):
+    def test_reinstall_reuses_tunnel_without_login_or_remote_changes(self):
         with tempfile.TemporaryDirectory() as folder:
-            with self.assertRaises(ValueError):
-                cf.provision('sala.exemplo.com.br', 'test', folder, self.fake([{'type': 'A', 'content': '192.0.2.1'}]))
-        self.assertFalse(any(method in ('PUT', 'POST') for method, _, _ in self.calls))
+            runner = FakeCloudflared(folder)
+            first = cf.provision('sala.exemplo.com', folder, runner=runner)
+            runner.calls.clear()
+            self.assertEqual(cf.provision('sala.exemplo.com', folder, runner=runner), first)
+            self.assertEqual(runner.calls, [])
 
-    def test_reject_url_instead_of_hostname(self):
-        with self.assertRaises(ValueError):
-            cf.provision('https://sala.exemplo.com', 'test', '/unused', self.fake())
-        self.assertEqual(self.calls, [])
+    def test_cached_account_authorization_is_reused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'login-home/.cloudflared').mkdir(parents=True)
+            (root / 'login-home/.cloudflared/cert.pem').write_text('cached')
+            runner = FakeCloudflared(folder)
+            cf.provision('sala.exemplo.com', folder, runner=runner)
+            self.assertFalse(any('login' in args for args in runner.calls))
+
+    def test_dns_failure_preserves_live_configuration_and_can_be_retried(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = FakeCloudflared(folder)
+            cf.provision('primeiro.exemplo.com', folder, runner=runner)
+            config = Path(folder) / 'runtime/config.yml'
+            before = config.read_text()
+            runner.fail_dns = True
+            with self.assertRaises(RuntimeError):
+                cf.provision('segundo.exemplo.com', folder, runner=runner)
+            self.assertEqual(config.read_text(), before)
+            runner.calls.clear()
+            runner.fail_dns = False
+            cf.provision('segundo.exemplo.com', folder, runner=runner)
+            self.assertFalse(any('create' in args for args in runner.calls))
+            self.assertEqual(json.loads(config.read_text())['ingress'][0]['hostname'], 'segundo.exemplo.com')
+
+    def test_login_without_certificate_stops_before_create_or_dns(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = FakeCloudflared(folder, missing_cert=True)
+            with self.assertRaises(RuntimeError):
+                cf.provision('sala.exemplo.com', folder, runner=runner)
+            self.assertEqual(runner.calls, [('tunnel', 'login')])
+
+    def test_legacy_tunnel_is_preserved_without_api_prompt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'tunnel_token').write_text('legacy-token')
+            metadata = {'hostname': 'sala.exemplo.com', 'tunnelId': 'legacy-id'}
+            (root / 'tunnel.json').write_text(json.dumps(metadata))
+            runner = FakeCloudflared(folder)
+            self.assertEqual(cf.provision('sala.exemplo.com', folder, runner=runner), metadata)
+            self.assertEqual(runner.calls, [])
+            self.assertEqual((root / 'runtime/tunnel_token').read_text(), 'legacy-token')
+            self.assertEqual(json.loads((root / 'runtime/config.yml').read_text()),
+                             {'token-file': '/etc/cloudflared/tunnel_token'})
+
+    def test_reject_url_instead_of_hostname_before_login(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = FakeCloudflared(folder)
+            with self.assertRaises(ValueError):
+                cf.provision('https://sala.exemplo.com', folder, runner=runner)
+            self.assertEqual(runner.calls, [])
+
+    def test_truenas_runner_uses_isolated_docker_home_and_streams_login_link(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = cf.Cloudflared(folder, docker=True)
+            with patch.object(cf.subprocess, 'run') as run:
+                runner('tunnel', 'login')
+            command = run.call_args[0][0]
+            self.assertEqual(command[:4], ['docker', 'run', '--rm', '--user'])
+            self.assertIn('HOME=/secrets/login-home', command)
+            self.assertEqual(command[-2:], ['tunnel', 'login'])
+            self.assertNotIn('capture_output', run.call_args[1])
+            self.assertEqual(runner.path(Path(folder) / 'login-home/.cloudflared/cert.pem'),
+                             '/secrets/login-home/.cloudflared/cert.pem')
+
+    def test_corrupt_saved_credentials_do_not_silently_replace_tunnel(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = FakeCloudflared(folder)
+            cf.provision('sala.exemplo.com', folder, runner=runner)
+            credentials = Path(folder) / 'runtime/credentials.json'
+            value = json.loads(credentials.read_text())
+            value['TunnelID'] = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+            credentials.write_text(json.dumps(value))
+            runner.calls.clear()
+            with self.assertRaises(ValueError):
+                cf.provision('sala.exemplo.com', folder, runner=runner)
+            self.assertEqual(runner.calls, [])
 
 
 if __name__ == '__main__':

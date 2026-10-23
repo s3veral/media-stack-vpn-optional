@@ -104,22 +104,25 @@ revise-as na interface antes de adicionar sua biblioteca.
 ## Cloudflare Tunnel e subdominio
 
 Para publicar somente a homepage (os paines administrativos continuam locais),
-voce precisa de um dominio ativo na sua conta Cloudflare e um API token com:
+voce precisa de um dominio ativo na sua conta Cloudflare. **Nao precisa criar nem
+colar um API token.** O Windows e o TrueNAS usam o login oficial do `cloudflared`:
 
-- **Account / Cloudflare Tunnel / Edit** na conta que contem o dominio;
-- **Zone / DNS / Edit** e **Zone / Zone / Read** na zona do dominio.
+1. Escolha publicar a homepage durante a instalacao.
+2. Abra o link unico exibido no terminal (pode usar outro computador ou celular).
+3. Entre na sua conta Cloudflare, selecione o dominio e clique em **Authorize / Autorizar**.
+4. Volte ao terminal e informe o endereco completo, por exemplo `sala.seudominio.com.br`.
+5. O instalador cria o tunnel localmente gerenciado, adiciona o CNAME e inicia o conector.
 
-Crie o token em [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens),
-restrito a sua conta e zona. O nome da permissao pode aparecer como
-Cloudflare One Connector: cloudflared Write em contas novas; e a permissao de
-escrita de Tunnel descrita na [documentacao oficial](https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/).
+O link depende da sessao e por isso e gerado durante a instalacao, nao e um link
+fixo neste README. O fluxo e o da [documentacao oficial da Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/create-local-tunnel/).
+Nao sobrescrevemos DNS existente. Se o endereco estiver ocupado, escolha outro;
+as credenciais ficam salvas para repetir a tentativa sem criar outro tunnel para o mesmo endereco.
 
-O instalador identifica a zona (inclusive dominios `.com.br`), cria um tunnel
-gerenciado, configura a rota `https://seu-subdominio` para `http://dashboard:8080`,
-cria o CNAME e sobe o container `cloudflared`. Nao substitui um registro DNS que
-aponte para outro servico. O API token e usado somente para configurar e nao e
-salvo; o token de execucao do tunnel fica no arquivo local `.secrets/tunnel_token`,
-excluido do Git. Tunnels ja configurados para o mesmo hostname sao reutilizados.
+Tudo fica na pasta privada `.secrets`, excluida do Git: a autorizacao da conta em
+`login-home/.cloudflared/cert.pem` e as credenciais de execucao em `runtime/`.
+O certificado tem permissoes de gerenciamento na conta; proteja-o e inclua-o apenas
+em backups privados. **O conector permanente recebe somente `runtime/`, nao o certificado da conta.**
+Tunnels ja configurados sao reutilizados, inclusive os da versao anterior com token.
 
 No Windows, tambem pode iniciar assim:
 
@@ -127,11 +130,12 @@ No Windows, tambem pode iniciar assim:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-install.ps1" -Vpn Off -MediaPath 'D:\Media' -Remote On -PublicHostname 'sala.seudominio.com'
 ```
 
-Voce informara o API token pelo prompt oculto; nao o coloque no comando.
+O login acontece no navegador; o instalador nao recebe sua senha Cloudflare.
 Para desativar o acesso externo, execute `install-windows.ps1 -Remote Off`.
-O conector para, mas o DNS/tunnel permanece na sua conta para reuso. Se voce
-rotacionar o token do tunnel na Cloudflare, renomeie `.secrets/tunnel_token` para
-um backup e reexecute o instalador para gerar outro.
+O conector para, mas o DNS/tunnel permanece na sua conta para reuso.
+Para autorizar outro dominio/conta, renomeie `cert.pem` para um backup privado e
+reexecute escolhendo um novo subdominio; o instalador mostrara outro link de login.
+Se o login expirar, faca o mesmo. Nao apague as credenciais de `tunnels/` ou `runtime/`.
 
 O tunnel publica a homepage, nao o streaming Jellyfin nem as APIs administrativas
 dos aplicativos. Busca e solicitacoes dependem do setup do Seerr, dos perfis

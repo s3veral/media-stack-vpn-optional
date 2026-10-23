@@ -35,6 +35,11 @@ jobs:
           docker compose -f compose.windows.yml -f compose.vpn.yml config --quiet
           docker compose -f compose.windows.yml --profile setup build setup
           docker compose -f compose.windows.yml build dashboard
+      - name: Validate browser-login config with official cloudflared
+        env:
+          MEDIA_PATH: /tmp/media-stack-ci
+          ADMIN_PASS: ci-only-not-a-real-secret
+        run: docker compose -f compose.windows.yml --profile setup run --rm --no-deps -v "$PWD:/checks:ro" setup python3 /checks/tests/check_cloudflare_config.py
       - name: Direct mode torrent smoke test
         env:
           MEDIA_PATH: ${{ github.workspace }}/.test-output/media

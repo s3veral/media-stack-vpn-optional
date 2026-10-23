@@ -55,9 +55,7 @@ if ($Vpn -eq 'Ask') {
 } else { $vpnEnabled = $Vpn -eq 'On' }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'wireguard') | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets') | Out-Null
-$tunnelTokenPath = Join-Path $InstallDir '.secrets\tunnel_token'
-if (-not (Test-Path -LiteralPath $tunnelTokenPath)) { Write-Utf8 $tunnelTokenPath '' }
+New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets\runtime') | Out-Null
 $wgTarget = Join-Path $InstallDir 'wireguard\wg0.conf'
 if ($vpnEnabled) {
     if (-not $WireGuardConfig -and -not (Test-Path -LiteralPath $wgTarget)) {
@@ -109,8 +107,7 @@ if ($Remote -eq 'Ask') {
     $remoteEnabled = $answer -match '^(s|sim|y|yes)$'
 } else { $remoteEnabled = $Remote -eq 'On' }
 if (-not $PublicHostname -and $saved -and $saved.PSObject.Properties.Name -contains 'PublicHostname') { $PublicHostname = $saved.PublicHostname }
-if ($remoteEnabled) {
-    if (-not $PublicHostname) { $PublicHostname = Read-Host 'Subdominio completo do painel (ex.: sala.exemplo.com)' }
+if ($remoteEnabled -and $PublicHostname) {
     $PublicHostname = $PublicHostname.Trim().ToLowerInvariant()
     if ($PublicHostname -notmatch '^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$') { throw 'Informe um subdominio completo, sem https:// ou caminhos.' }
 }
@@ -165,22 +162,18 @@ if (-not $SkipConfigure) {
     catch { Write-Warning 'Algumas integracoes precisam de ajuste (veja as mensagens acima). Os containers seguem ativos; conclua o setup nas interfaces ou reexecute o instalador.' }
 }
 if ($remoteEnabled) {
-    $tunnelMetadata = Join-Path $InstallDir '.secrets\tunnel.json'
-    $reuseTunnel = $false
-    if ((Test-Path -LiteralPath $tunnelMetadata) -and (Get-Item -LiteralPath $tunnelTokenPath).Length -gt 0) {
-        $tunnelInfo = Get-Content -LiteralPath $tunnelMetadata -Raw | ConvertFrom-Json
-        $reuseTunnel = $tunnelInfo.hostname -eq $PublicHostname
-    }
-    if (-not $reuseTunnel) {
-        Write-Host 'Token Cloudflare necessario: Account / Cloudflare Tunnel Edit; Zone / DNS Edit; Zone / Zone Read.'
-        Write-Host 'Restrinja o token a sua conta e ao dominio escolhido. O API token nao sera salvo.'
-        $secureToken = Read-Host 'Cloudflare API token (entrada oculta)' -AsSecureString
-        $previousToken = $env:CLOUDFLARE_API_TOKEN
-        try {
-            $env:CLOUDFLARE_API_TOKEN = (New-Object Net.NetworkCredential('', $secureToken)).Password
-            Invoke-Compose --profile setup run --rm --no-deps -e CLOUDFLARE_API_TOKEN setup provision
-        } finally { $env:CLOUDFLARE_API_TOKEN = $previousToken }
-    }
+    Write-Host 'Cloudflare: abra o link que aparecera abaixo e autorize o dominio na sua conta.'
+    Write-Host 'Depois informe o endereco completo do painel, por exemplo sala.seudominio.com.'
+    Invoke-Compose --profile setup run --rm --no-deps setup provision
+    $tunnelInfo = Get-Content -LiteralPath (Join-Path $InstallDir '.secrets\tunnel.json') -Raw | ConvertFrom-Json
+    $PublicHostname = $tunnelInfo.hostname
+    $settings.PublicHostname = $PublicHostname
+    $envValues.PUBLIC_HOSTNAME = $PublicHostname
+    Write-Utf8 $settingsPath ($settings | ConvertTo-Json)
+    $lines = foreach ($key in $envValues.Keys) { "$key=$(Quote-DotEnv $envValues[$key])" }
+    Write-Utf8 (Join-Path $InstallDir '.env') (($lines -join "`n") + "`n")
+    # Apply the hostname chosen after browser authorization to portal CSRF checks.
+    Invoke-Compose up -d dashboard
 }
 if ($remoteEnabled) { Invoke-Compose --profile tunnel up -d cloudflared }
 else { Invoke-Compose --profile tunnel stop cloudflared }

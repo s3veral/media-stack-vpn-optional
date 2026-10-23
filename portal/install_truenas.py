@@ -32,8 +32,8 @@ def main():
     password = saved.get('password') or secrets.token_urlsafe(24)
     remote = ask_yes('Publicar a homepage com Cloudflare Tunnel?', saved.get('remote', False))
     hostname = saved.get('hostname', '')
-    if remote:
-        hostname = input(f'Subdominio completo (Enter: {hostname or "sala.exemplo.com"}): ').strip() or hostname
+    if remote and hostname:
+        hostname = input(f'Subdominio completo (Enter para manter {hostname}): ').strip() or hostname
     assets = ['portal/Dockerfile', 'portal/app.py', 'portal/cloudflare_setup.py',
               'portal/static/index.html', 'portal/static/style.css', 'portal/static/app.js']
     for asset in assets:
@@ -44,17 +44,11 @@ def main():
     sys.path.insert(0, str(root / 'portal'))
     secret_dir = root / '.secrets'
     secret_dir.mkdir(exist_ok=True, mode=0o700)
-    token_file = secret_dir / 'tunnel_token'
-    if not token_file.exists():
-        token_file.touch(mode=0o600)
+    (secret_dir / 'runtime').mkdir(exist_ok=True, mode=0o700)
     if remote:
-        metadata_file = secret_dir / 'tunnel.json'
-        metadata = json.loads(metadata_file.read_text()) if metadata_file.exists() else {}
-        if metadata.get('hostname') != hostname or not token_file.stat().st_size:
-            print('Crie um API token Cloudflare com Cloudflare Tunnel Edit, DNS Edit e Zone Read para sua conta/zona.')
-            print('O API token sera usado apenas agora; nao sera salvo no servidor.')
-            from cloudflare_setup import provision
-            provision(hostname, getpass.getpass('Cloudflare API token (oculto): '), secret_dir)
+        from cloudflare_setup import Cloudflared, provision
+        result = provision(hostname, secret_dir, runner=Cloudflared(secret_dir, docker=True))
+        hostname = result['hostname']
     inspection = json.loads(subprocess.check_output(['docker', 'inspect', 'qbittorrent']))[0]
     networks = inspection['NetworkSettings']['Networks']
     network = next(iter(networks))
@@ -78,11 +72,10 @@ def main():
                 'profiles': ['tunnel'], 'image': 'cloudflare/cloudflared:latest',
                 'restart': 'unless-stopped', 'user': '0:0', 'read_only': True,
                 'cap_drop': ['ALL'], 'security_opt': ['no-new-privileges:true'],
-                'command': ['tunnel', '--no-autoupdate', 'run', '--token-file', '/run/secrets/tunnel_token'],
-                'secrets': ['tunnel_token'], 'depends_on': ['dashboard'],
+                'command': ['tunnel', '--config', '/etc/cloudflared/config.yml', '--no-autoupdate', 'run'],
+                'volumes': [f'{secret_dir / "runtime"}:/etc/cloudflared:ro'], 'depends_on': ['dashboard'],
             },
         },
-        'secrets': {'tunnel_token': {'file': str(token_file)}},
         'networks': {'default': {'external': True, 'name': network}},
     }
     compose = root / 'compose.portal.json'
