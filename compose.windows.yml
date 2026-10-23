@@ -8,6 +8,37 @@ x-app: &app
     TZ: ${TZ:-America/Sao_Paulo}
 
 services:
+  dashboard:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: portal/Dockerfile
+    environment:
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:?Run install-windows.ps1 first}
+      DASHBOARD_PASSWORD: ${ADMIN_PASS:?Run install-windows.ps1 first}
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:-}
+      VPN_ENABLED: ${VPN_ENABLED:-false}
+    ports: ["127.0.0.1:8090:8080"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - radarr-config:/configs/radarr:ro
+      - sonarr-config:/configs/sonarr:ro
+      - seerr-config:/configs/seerr:ro
+      - "${MEDIA_PATH}:/media:ro"
+  cloudflared:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command: [tunnel, --no-autoupdate, run, --token-file, /run/secrets/tunnel_token]
+    secrets: [tunnel_token]
+    depends_on: [dashboard]
   qbittorrent:
     <<: *app
     container_name: qbittorrent
@@ -121,9 +152,11 @@ services:
       VPN_ENABLED: ${VPN_ENABLED:-false}
       QBIT_NETWORK_INTERFACE: ${QBIT_NETWORK_INTERFACE:-}
       TZ: ${TZ:-America/Sao_Paulo}
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./wireguard:/wireguard:ro
+      - ./.secrets:/secrets
       - qbittorrent-config:/configs/qbittorrent
       - radarr-config:/configs/radarr
       - sonarr-config:/configs/sonarr
@@ -145,3 +178,7 @@ volumes:
   profilarr-config:
   qui-config:
   dozzle-config:
+
+secrets:
+  tunnel_token:
+    file: ./.secrets/tunnel_token

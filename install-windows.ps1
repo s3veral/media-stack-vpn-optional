@@ -7,6 +7,8 @@ param(
     [string]$WireGuardConfig,
     [string]$LanNetwork,
     [string]$TimeZone = 'America/Sao_Paulo',
+    [ValidateSet('Ask', 'On', 'Off')][string]$Remote = 'Ask',
+    [string]$PublicHostname,
     [switch]$GenerateOnly,
     [switch]$SkipConfigure
 )
@@ -53,6 +55,9 @@ if ($Vpn -eq 'Ask') {
 } else { $vpnEnabled = $Vpn -eq 'On' }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'wireguard') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets') | Out-Null
+$tunnelTokenPath = Join-Path $InstallDir '.secrets\tunnel_token'
+if (-not (Test-Path -LiteralPath $tunnelTokenPath)) { Write-Utf8 $tunnelTokenPath '' }
 $wgTarget = Join-Path $InstallDir 'wireguard\wg0.conf'
 if ($vpnEnabled) {
     if (-not $WireGuardConfig -and -not (Test-Path -LiteralPath $wgTarget)) {
@@ -82,7 +87,7 @@ New-Item -ItemType Directory -Force -Path $MediaPath | Out-Null
 foreach ($dir in @('movies', 'tv', 'downloads', 'downloads\torrent', 'downloads\crossseed')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $MediaPath $dir) | Out-Null
 }
-$assets = @('compose.windows.yml', 'compose.direct.yml', 'compose.vpn.yml', 'truenas-file-structure.sh', 'install-windows.ps1', 'stack.ps1', '.dockerignore', 'windows\Dockerfile.setup', 'windows\build_configure.py', 'windows\entrypoint.sh')
+$assets = @('compose.windows.yml', 'compose.direct.yml', 'compose.vpn.yml', 'truenas-file-structure.sh', 'install-windows.ps1', 'stack.ps1', '.dockerignore', 'windows\Dockerfile.setup', 'windows\build_configure.py', 'windows\entrypoint.sh', 'portal\Dockerfile', 'portal\app.py', 'portal\cloudflare_setup.py', 'portal\static\index.html', 'portal\static\style.css', 'portal\static\app.js')
 foreach ($asset in $assets) {
     $source = Join-Path $PSScriptRoot $asset
     $destination = Join-Path $InstallDir $asset
@@ -93,7 +98,23 @@ foreach ($asset in $assets) {
     }
 }
 $adminPass = if ($saved) { $saved.AdminPass } else { [Guid]::NewGuid().ToString('N').Substring(0, 24) }
-$settings = [ordered]@{ MediaPath = $MediaPath; VpnEnabled = $vpnEnabled; LanNetwork = $LanNetwork; AdminPass = $adminPass; TimeZone = $TimeZone }
+$remoteEnabled = $false
+if ($saved -and $saved.PSObject.Properties.Name -contains 'RemoteEnabled') { $remoteEnabled = [bool]$saved.RemoteEnabled }
+if ($Remote -eq 'Ask') {
+    $defaultRemote = if ($remoteEnabled) { 's' } else { 'n' }
+    do {
+        $answer = Read-Host "Publicar o painel com Cloudflare Tunnel? [s/n] (Enter: $defaultRemote)"
+        if (-not $answer) { $answer = $defaultRemote }
+    } while ($answer -notmatch '^(s|sim|y|yes|n|nao|no)$')
+    $remoteEnabled = $answer -match '^(s|sim|y|yes)$'
+} else { $remoteEnabled = $Remote -eq 'On' }
+if (-not $PublicHostname -and $saved -and $saved.PSObject.Properties.Name -contains 'PublicHostname') { $PublicHostname = $saved.PublicHostname }
+if ($remoteEnabled) {
+    if (-not $PublicHostname) { $PublicHostname = Read-Host 'Subdominio completo do painel (ex.: sala.exemplo.com)' }
+    $PublicHostname = $PublicHostname.Trim().ToLowerInvariant()
+    if ($PublicHostname -notmatch '^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$') { throw 'Informe um subdominio completo, sem https:// ou caminhos.' }
+}
+$settings = [ordered]@{ MediaPath = $MediaPath; VpnEnabled = $vpnEnabled; LanNetwork = $LanNetwork; AdminPass = $adminPass; TimeZone = $TimeZone; RemoteEnabled = $remoteEnabled; PublicHostname = $PublicHostname }
 if (Test-Path -LiteralPath $settingsPath) { Copy-Item -LiteralPath $settingsPath -Destination "$settingsPath.bak" -Force }
 Write-Utf8 $settingsPath ($settings | ConvertTo-Json)
 $envValues = [ordered]@{
@@ -106,6 +127,7 @@ $envValues = [ordered]@{
     ADMIN_USER = 'admin'
     ADMIN_PASS = $adminPass
     ADMIN_EMAIL = 'admin@localhost.local'
+    PUBLIC_HOSTNAME = $PublicHostname
 }
 $lines = foreach ($key in $envValues.Keys) { "$key=$(Quote-DotEnv $envValues[$key])" }
 Write-Utf8 (Join-Path $InstallDir '.env') (($lines -join "`n") + "`n")
@@ -137,12 +159,34 @@ Invoke-Compose config --quiet
 Invoke-Compose stop qbittorrent
 Invoke-Compose --profile setup build setup
 Invoke-Compose --profile setup run --rm --no-deps setup prepare
-Invoke-Compose up -d
+if ($remoteEnabled) {
+    $tunnelMetadata = Join-Path $InstallDir '.secrets\tunnel.json'
+    $reuseTunnel = $false
+    if ((Test-Path -LiteralPath $tunnelMetadata) -and (Get-Item -LiteralPath $tunnelTokenPath).Length -gt 0) {
+        $tunnelInfo = Get-Content -LiteralPath $tunnelMetadata -Raw | ConvertFrom-Json
+        $reuseTunnel = $tunnelInfo.hostname -eq $PublicHostname
+    }
+    if (-not $reuseTunnel) {
+        Write-Host 'Token Cloudflare necessario: Account / Cloudflare Tunnel Edit; Zone / DNS Edit; Zone / Zone Read.'
+        Write-Host 'Restrinja o token a sua conta e ao dominio escolhido. O API token nao sera salvo.'
+        $secureToken = Read-Host 'Cloudflare API token (entrada oculta)' -AsSecureString
+        $previousToken = $env:CLOUDFLARE_API_TOKEN
+        try {
+            $env:CLOUDFLARE_API_TOKEN = (New-Object Net.NetworkCredential('', $secureToken)).Password
+            Invoke-Compose --profile setup run --rm --no-deps -e CLOUDFLARE_API_TOKEN setup provision
+        } finally { $env:CLOUDFLARE_API_TOKEN = $previousToken }
+    }
+}
+Invoke-Compose up -d --build
 if (-not $SkipConfigure) {
     Invoke-Compose --profile setup run --rm --no-deps setup configure
 }
+if ($remoteEnabled) { Invoke-Compose --profile tunnel up -d cloudflared }
+else { Invoke-Compose --profile tunnel stop cloudflared }
 Write-Host ''
 Write-Host 'Stack iniciada. Jellyfin: http://localhost:8096 | Seerr: http://localhost:5055'
+Write-Host 'Homepage Sala: http://localhost:8090'
+if ($remoteEnabled) { Write-Host "Acesso externo: https://$PublicHostname" }
 Write-Host 'qBittorrent: http://localhost:8080 | Radarr: http://localhost:7878 | Sonarr: http://localhost:8989'
 Write-Host "Login configurado: admin / $adminPass (tambem salvo em $settingsPath)."
 Write-Host 'Finalize os indexadores no Prowlarr e idiomas/provedores no Bazarr.'

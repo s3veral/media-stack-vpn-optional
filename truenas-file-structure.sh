@@ -1631,3 +1631,15 @@ echo ""
 echo "  Still manual by design: Prowlarr indexers (your trackers), Bazarr languages"
 echo "  and providers, and the one-time Qui library scan."
 echo "Script completed."
+
+# Optional portal installer (excluded from the Windows setup runner).
+read -rp "Instalar tambem a homepage Sala (busca, downloads, biblioteca e disco)? [S/n]: " INSTALL_PORTAL
+if [[ "${INSTALL_PORTAL:-s}" =~ ^([sSyY]|[sS][iI][mM]|[yY][eE][sS])$ ]]; then
+    export HOST_IP
+    PORTAL_INSTALLER=$(mktemp /tmp/media-portal-XXXXXX.py)
+    if curl -fL https://raw.githubusercontent.com/s3veral/media-stack-vpn-optional/main/portal/install_truenas.py -o "$PORTAL_INSTALLER"; then
+        python3 "$PORTAL_INSTALLER" || warn "Homepage nao foi instalada. A stack principal continua disponivel."
+    else
+        warn "Nao foi possivel baixar o instalador da homepage."
+    fi
+fi

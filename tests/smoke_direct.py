@@ -56,7 +56,8 @@ def main():
             passwords = re.findall(r'temporary password is provided for this session:\s*(\S+)', logs)
             if passwords:
                 response = api('auth/login', {'username': 'admin', 'password': passwords[-1]})
-                if response == b'Ok.':
+                # qBittorrent >=5.2 returns 204 with an empty body on success.
+                if response in (b'Ok.', b'') and isinstance(json.loads(api('app/preferences')), dict):
                     break
                 if attempt < 10:
                     print('Login response:', repr(response), flush=True)
@@ -82,4 +83,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

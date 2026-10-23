@@ -10,3 +10,6 @@ media/
 *.log
 __pycache__/
 .test-output/
+.secrets/
+.env.portal
+portal-settings.json

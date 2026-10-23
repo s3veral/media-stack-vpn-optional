@@ -4,3 +4,5 @@
 !windows/Dockerfile.setup
 !windows/build_configure.py
 !windows/entrypoint.sh
+!portal
+!portal/**

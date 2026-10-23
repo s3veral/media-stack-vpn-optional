@@ -14,5 +14,6 @@ case "${1:-configure}" in
     chown -R 1000:1000 /configs
     ;;
   configure) exec bash /usr/local/bin/configure-stack ;;
+  provision) exec python3 /installer/portal/cloudflare_setup.py ;;
   *) exec "$@" ;;
 esac

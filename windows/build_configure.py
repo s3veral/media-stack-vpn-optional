@@ -10,6 +10,7 @@ import sys
 def build(source):
     helpers = source[source.index('# \u2500\u2500 Helpers'):source.index('# \u2500\u2500 Pre-flight')]
     configure = source[source.index('export ADMIN_USER ADMIN_PASS ADMIN_EMAIL CONFIG_POOL MEDIA_POOL'):]
+    configure = configure.split('# Optional portal installer')[0]
     configure = configure.replace('/mnt/$CONFIG_POOL/configs', '/configs')
     hosts = {8080: 'qbittorrent', 7878: 'radarr', 8989: 'sonarr',
              9696: 'prowlarr', 8191: 'flaresolverr', 6868: 'profilarr',
