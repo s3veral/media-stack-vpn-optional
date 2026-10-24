@@ -32,9 +32,9 @@ class CredentialTests(unittest.TestCase):
             config.write_text(json.dumps({'main': {'apiKey': 'unit-key'}}))
             setup = auth.AuthSetup('admin', 'unit-only-password', configs=folder)
             existing = [{'id': 4, 'hostname': 'custom-host', 'isDefault': True, 'is4k': False}]
-            with patch.object(auth, 'http', side_effect=[existing, {}, existing, {}]) as http:
+            with patch.object(auth, 'http', side_effect=[existing, {}, existing, {}, {'initialized': True}]) as http:
                 setup.seerr_services()
-            self.assertEqual(len(http.call_args_list), 4)
+            self.assertEqual(len(http.call_args_list), 5)
             self.assertEqual(http.call_args_list[1].args[1], existing[0])
             self.assertTrue(all(call.args[0].endswith('/test') for call in http.call_args_list if len(call.args) > 1))
 
@@ -52,11 +52,25 @@ class CredentialTests(unittest.TestCase):
                                      'rootFolders': [{'path': root}]}, {},
                                 [{'hostname': name, 'isDefault': True}]])
             setup = auth.AuthSetup('admin', 'unit-only-password', configs=folder)
-            with patch.object(auth, 'http', side_effect=replies) as http:
+            with patch.object(auth, 'http', side_effect=replies + [{'initialized': True}]) as http:
                 setup.seerr_services()
-            self.assertEqual(http.call_count, 8)
+            self.assertEqual(http.call_count, 9)
             self.assertEqual(http.call_args_list[2].args[1]['activeDirectory'], '/media/movies')
             self.assertEqual(http.call_args_list[6].args[1]['activeDirectory'], '/media/tv')
+
+    def test_seerr_wizard_finishes_only_after_services_and_admin_login(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / 'seerr/settings.json'
+            config.parent.mkdir(parents=True)
+            config.write_text(json.dumps({'main': {'apiKey': 'unit-key'}}))
+            setup = auth.AuthSetup('admin', 'unit-only-password', configs=folder)
+            existing = [{'hostname': 'custom-host', 'isDefault': True, 'is4k': False}]
+            with patch.object(auth, 'http', side_effect=[existing, {}, existing, {},
+                    {'initialized': False}, {'id': 1}, {'initialized': True}, {'initialized': True}]) as http:
+                setup.seerr_services()
+            self.assertTrue(http.call_args_list[5].args[0].endswith('/auth/jellyfin'))
+            self.assertTrue(http.call_args_list[6].args[0].endswith('/settings/initialize'))
+            self.assertIs(http.call_args_list[5].kwargs['opener'], http.call_args_list[6].kwargs['opener'])
 
     def test_seerr_does_not_override_an_existing_nondefault_server(self):
         with tempfile.TemporaryDirectory() as folder:

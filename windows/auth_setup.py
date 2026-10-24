@@ -267,6 +267,16 @@ class AuthSetup:
             saved = http(base, headers=headers)
             if not any(s.get('hostname') == name and s.get('isDefault') for s in saved):
                 raise SetupError('Seerr nao confirmou o servidor ' + name + '.')
+        public_url = 'http://seerr:5055/api/v1/settings/public'
+        if not http(public_url).get('initialized'):
+            # Finish the wizard only after both service tests and a real
+            # administrator login. Preserve every existing library setting.
+            connection = client()
+            http('http://seerr:5055/api/v1/auth/jellyfin',
+                 {'username': self.username, 'password': self.password}, opener=connection)
+            http('http://seerr:5055/api/v1/settings/initialize', {}, opener=connection)
+            if not http(public_url).get('initialized'):
+                raise SetupError('Seerr ainda nao confirmou a conclusao do assistente.')
 
     def verify_profilarr(self):
         connection = client()
