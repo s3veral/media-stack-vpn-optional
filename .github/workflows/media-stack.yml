@@ -28,6 +28,7 @@ jobs:
           ./install-windows.ps1 -InstallDir "$PWD/.test-output/install" -MediaPath "$PWD/.test-output/media" -Vpn Off -Remote Off -GenerateOnly
           ./tests/test_windows.ps1
           ./tests/test_bootstrap.ps1
+          ./tests/test_windows_docker.ps1
       - name: Compose direct and VPN variants
         env:
           MEDIA_PATH: /tmp/media-stack-ci
@@ -64,6 +65,16 @@ jobs:
           MEDIA_PATH: /tmp/media-stack-ci
           ADMIN_PASS: ci-only-not-a-real-secret
         run: docker compose -f compose.windows.yml -f compose.direct.yml down
+  windows-powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Windows PowerShell 5.1 regressions
+        shell: powershell
+        run: |
+          ./tests/test_bootstrap.ps1
+          ./tests/test_windows.ps1
+          ./tests/test_windows_docker.ps1
   telegram-build:
     runs-on: ubuntu-latest
     timeout-minutes: 35

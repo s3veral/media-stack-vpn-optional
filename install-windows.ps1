@@ -28,6 +28,31 @@ function Invoke-Compose {
     & docker compose --project-directory $script:InstallDir --env-file "$script:InstallDir\.env" -f "$script:InstallDir\compose.windows.yml" -f "$script:InstallDir\$script:Override" @args
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed ($LASTEXITCODE). See the message above." }
 }
+function Assert-StackContainerOwnership([string]$ProjectDir) {
+    # Avoid embedded quotes in Go templates: Windows PowerShell 5.1 strips them
+    # when passing native arguments. Inspect JSON also distinguishes unlabeled
+    # containers from an empty result, so foreign containers remain protected.
+    foreach ($name in @('qbittorrent', 'radarr', 'sonarr', 'prowlarr', 'bazarr', 'jellyfin', 'seerr', 'profilarr', 'flaresolverr', 'qui', 'dozzle')) {
+        $containerIds = @(& docker ps --all --quiet --no-trunc --filter "name=^/$name`$")
+        if ($LASTEXITCODE -ne 0) { throw 'Falha ao verificar containers existentes.' }
+        if ($containerIds.Count -eq 0) { continue }
+        if ($containerIds.Count -ne 1 -or $containerIds[0] -notmatch '^[a-f0-9]{64}$') { throw "Resposta inesperada ao verificar o container $name." }
+        $inspectOutput = & docker inspect --type container $containerIds[0]
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao inspecionar o container $name." }
+        $containers = @(($inspectOutput -join "`n") | ConvertFrom-Json)
+        if ($containers.Count -ne 1 -or $containers[0].Id -ne $containerIds[0] -or $containers[0].Name -ne "/$name") { throw "Resposta inesperada ao inspecionar o container $name." }
+        $labels = $containers[0].Config.Labels
+        $projectLabel = $null
+        $directoryLabel = $null
+        if ($null -ne $labels) {
+            $projectLabel = $labels.PSObject.Properties['com.docker.compose.project']
+            $directoryLabel = $labels.PSObject.Properties['com.docker.compose.project.working_dir']
+        }
+        if ($null -eq $projectLabel -or $projectLabel.Value -ne 'media-stack') { throw "Ja existe um container $name fora deste projeto. Resolva o conflito antes de instalar." }
+        if ($null -eq $directoryLabel -or -not $directoryLabel.Value) { throw "O container $name nao informa a pasta do projeto. Verifique o conflito antes de instalar." }
+        if ($directoryLabel.Value -ne $ProjectDir) { throw "Projeto media-stack existente em $($directoryLabel.Value). Use o mesmo -InstallDir." }
+    }
+}
 
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -159,15 +184,7 @@ if ($LASTEXITCODE -ne 0 -or $dockerOs -ne 'linux') { throw 'Abra Docker Desktop 
 & docker compose version
 if ($LASTEXITCODE -ne 0) { throw 'Docker Compose v2 e necessario (incluido no Docker Desktop).' }
 # Upstream uses fixed container names. Do not take over another stack's containers.
-foreach ($name in @('qbittorrent', 'radarr', 'sonarr', 'prowlarr', 'bazarr', 'jellyfin', 'seerr', 'profilarr', 'flaresolverr', 'qui', 'dozzle')) {
-    $existing = & docker ps -a --filter "name=^/$name`$" --format '{{.Label "com.docker.compose.project"}}'
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao verificar containers existentes.' }
-    if ($existing -and $existing -ne 'media-stack') { throw "Ja existe um container $name fora deste projeto. Resolva o conflito antes de instalar." }
-    if ($existing -eq 'media-stack') {
-        $oldDir = & docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' $name
-        if ($oldDir -and $oldDir -ne $InstallDir) { throw "Projeto media-stack existente em $oldDir. Use o mesmo -InstallDir." }
-    }
-}
+Assert-StackContainerOwnership $InstallDir
 Invoke-Compose config --quiet
 # Stop only this project's torrent client before copying a changed profile.
 Invoke-Compose stop qbittorrent
