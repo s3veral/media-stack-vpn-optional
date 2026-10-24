@@ -1,9 +1,9 @@
 name: Media stack checks
 on:
   push:
-    paths: ['truenas-file-structure.sh', '*windows*', 'connect-drive.ps1', 'stack.ps1', 'compose*.yml', 'windows/**', 'portal/**', 'tests/**', '.github/workflows/media-stack.yml']
+    paths: ['truenas-file-structure.sh', '*windows*', 'connect-drive.ps1', 'stack.ps1', 'add-indexers.ps1', 'compose*.yml', 'windows/**', 'portal/**', 'tests/**', '.github/workflows/media-stack.yml']
   pull_request:
-    paths: ['truenas-file-structure.sh', '*windows*', 'connect-drive.ps1', 'stack.ps1', 'compose*.yml', 'windows/**', 'portal/**', 'tests/**', '.github/workflows/media-stack.yml']
+    paths: ['truenas-file-structure.sh', '*windows*', 'connect-drive.ps1', 'stack.ps1', 'add-indexers.ps1', 'compose*.yml', 'windows/**', 'portal/**', 'tests/**', '.github/workflows/media-stack.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,7 +21,7 @@ jobs:
       - name: Parse PowerShell and prepare direct mode
         shell: pwsh
         run: |
-          foreach ($file in @('bootstrap-windows.ps1','install-windows.ps1','connect-drive.ps1','stack.ps1')) {
+          foreach ($file in @('bootstrap-windows.ps1','install-windows.ps1','connect-drive.ps1','stack.ps1','add-indexers.ps1')) {
             $parseErrors = $null
             [Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$null, [ref]$parseErrors) | Out-Null
             if ($parseErrors) { throw ($parseErrors | Out-String) }
@@ -30,6 +30,7 @@ jobs:
           ./tests/test_windows.ps1
           ./tests/test_bootstrap.ps1
           ./tests/test_windows_docker.ps1
+          ./tests/test_indexers.ps1
       - name: Compose direct and VPN variants
         env:
           MEDIA_PATH: /tmp/media-stack-ci
@@ -76,6 +77,7 @@ jobs:
           ./tests/test_bootstrap.ps1
           ./tests/test_windows.ps1
           ./tests/test_windows_docker.ps1
+          ./tests/test_indexers.ps1
   telegram-build:
     runs-on: ubuntu-latest
     timeout-minutes: 35

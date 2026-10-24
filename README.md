@@ -148,6 +148,44 @@ confirme a sincronizacao com Radarr/Sonarr. Sem fontes, um pedido pode ficar
 aguardando e nao representa uma transferencia ativa. A fila de importacao
 Radarr/Sonarr e a fila de transferencias qBittorrent sao coisas diferentes.
 
+## Adicionar fontes publicas no Windows
+
+`add-indexers.ps1` prepara Internet Archive, Knaben, Nyaa.si, EZTV, YTS,
+LimeTorrents e 1337x usando as definicoes atuais do Prowlarr instalado.
+E uma selecao inicial, nao um ranking de qualidade nem garantia de disponibilidade
+ou de conteudo autorizado. Consulte as [definicoes oficiais](https://github.com/Prowlarr/Indexers)
+e use apenas conteudo para o qual voce tenha autorizacao.
+
+```powershell
+Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/s3veral/media-stack-vpn-optional/main/add-indexers.ps1' -OutFile "$env:TEMP\media-stack-indexers.ps1"
+# Somente previa; nao testa sites, altera configuracoes nem inicia downloads:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-indexers.ps1"
+# Testa cada fonte, salva somente as aprovadas e solicita sincronizacao:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\media-stack-indexers.ps1" -Apply
+```
+
+Com `-Apply`, as novas fontes usam o Sync Profile com RSS, pesquisa automatica
+e interativa habilitados. **Pedidos ja monitorados podem comecar a baixar.**
+Sem `-Apply` o acesso e somente leitura local. A chave de API e lida do container
+local sem ser exibida nem enviada a sites externos. Indexadores ja existentes,
+inclusive desativados, sao preservados. Falhas nao usam `forceSave` nem tentam
+mirrors alternativos. O FlareSolverr ja configurado e usado apenas nas definicoes
+que o indicam; sites bloqueados podem continuar indisponiveis.
+
+Outras fontes publicas podem ser escolhidas pelo nome/ID da definicao:
+
+```powershell
+.\add-indexers.ps1 -Indexers internetarchive,knaben,nyaasi -Apply
+```
+
+Fontes privadas/semi-privadas ou que pedem login/cookie/API key sao recusadas
+pelo script; cadastre-as manualmente no Prowlarr com sua propria conta. Usenet
+tambem nao e configurado: esta stack usa qBittorrent, nao um cliente/provedor Usenet.
+Radarr (filmes) e Sonarr (series) ja estao instalados e vinculados. A selecao inclui
+fontes gerais com categorias de audio/livros para busca manual no Prowlarr, mas
+nao instala Lidarr ou um gerenciador de livros. Bazarr e um gerenciador de legendas,
+nao um indexador torrent: seus provedores continuam manuais.
+
 ## Cloudflare Tunnel e subdominio
 
 Para publicar somente a homepage (os paines administrativos continuam locais),
