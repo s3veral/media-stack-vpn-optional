@@ -11,7 +11,8 @@ if (Test-Path -LiteralPath $ConfigPath) {
 $binary = Join-Path $PSScriptRoot 'tools\rclone.exe'
 if (-not (Test-Path -LiteralPath $binary)) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $versionText = (Invoke-WebRequest -UseBasicParsing 'https://downloads.rclone.org/version.txt').Content.Trim()
+    $versionResponse = Invoke-WebRequest -UseBasicParsing 'https://downloads.rclone.org/version.txt' -TimeoutSec 30
+    $versionText = if ($versionResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($versionResponse.Content).Trim() } else { ([string]$versionResponse.Content).Trim() }
     if ($versionText -notmatch '^rclone v([0-9]+\.[0-9]+\.[0-9]+)$') { throw 'Versao rclone inesperada; baixe o rclone oficial manualmente.' }
     $version = $Matches[1]
     $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
@@ -20,8 +21,8 @@ if (-not (Test-Path -LiteralPath $binary)) {
     New-Item -ItemType Directory -Path $stage | Out-Null
     $zip = Join-Path $stage $name
     Write-Host 'Baixando rclone portatil do site oficial e verificando SHA256...'
-    Invoke-WebRequest -UseBasicParsing "https://downloads.rclone.org/v$version/$name" -OutFile $zip
-    $sumResponse = Invoke-WebRequest -UseBasicParsing "https://downloads.rclone.org/v$version/SHA256SUMS"
+    Invoke-WebRequest -UseBasicParsing "https://downloads.rclone.org/v$version/$name" -OutFile $zip -TimeoutSec 300
+    $sumResponse = Invoke-WebRequest -UseBasicParsing "https://downloads.rclone.org/v$version/SHA256SUMS" -TimeoutSec 30
     $checksums = if ($sumResponse.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($sumResponse.Content) } else { [string]$sumResponse.Content }
     $match = [regex]::Match($checksums, '(?m)^([a-fA-F0-9]{64})\s+\*?' + [regex]::Escape($name) + '\s*$')
     if (-not $match.Success -or (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $match.Groups[1].Value) { throw 'SHA256 do rclone nao confere. Download nao sera executado.' }
