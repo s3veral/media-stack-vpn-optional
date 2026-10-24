@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Pobreflix: biblioteca pessoal e privada com Sala MediaStack. Organização local, acompanhamento de downloads e cópias autorizadas no Google Drive e Telegram.">
+  <title>Pobreflix · Seu acervo, no seu controle</title>
+  <link rel="stylesheet" href="/public.css">
+</head>
+<body>
+  <a class="skip" href="#conteudo">Pular para o conteúdo</a>
+  <div class="wrap">
+    <header class="site-header"><a class="brand" href="/" aria-label="Pobreflix, início">pobreflix<span>.</span></a><nav class="header-links" aria-label="Principal"><a href="/privacy">Privacidade</a><a href="/terms">Termos</a><a class="button" href="/app">Entrar no painel ↗</a></nav></header>
+    <main id="conteudo">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy"><span class="eyebrow">Biblioteca privada · Sala MediaStack</span><h1 id="hero-title">O seu acervo.<br><em>No seu controle.</em></h1><p>Uma central pessoal para organizar filmes, séries, fotos e músicas, acompanhar sua biblioteca local e guardar cópias nas suas próprias contas.</p><div class="hero-actions"><a class="button primary" href="/app">Acessar minha biblioteca <span aria-hidden="true">↗</span></a><a class="button" href="#como-funciona">Como funciona ↓</a></div><span class="access-note">Acesso restrito ao administrador e às pessoas autorizadas. Não há cadastro público.</span></div>
+        <figure class="archive-illustration"><div class="archive-board"><div class="board-label"><span>SEU ACERVO PESSOAL</span><span>01 / 03</span></div><div class="media-spines" aria-label="Filmes, séries, fotos e músicas"><span>FILMES</span><span>SÉRIES</span><span>FOTOS</span><span>MÚSICAS</span></div><div class="copy-row"><strong>No seu servidor</strong><span>Originais preservados</span></div><div class="copy-row"><strong>Google Drive</strong><span>Cópia dos arquivos autorizados</span></div><div class="copy-row"><strong>Telegram</strong><span>Também para o que couber</span></div></div><figcaption>Ilustração do funcionamento · não exibe arquivos reais</figcaption></figure>
+      </section>
+      <section id="como-funciona" class="section" aria-labelledby="workflow-title"><div class="section-intro"><p class="eyebrow">Menos gerenciamento, mais tempo para o seu acervo</p><h2 id="workflow-title">Uma biblioteca. Três cuidados.</h2><p>O Pobreflix é uma instalação pessoal do Sala MediaStack. As integrações dependem da configuração e da autorização do administrador.</p></div><div class="steps"><article class="step"><span class="step-number">01</span><h3>Organizar e acompanhar</h3><p>Consulte a biblioteca, os pedidos, as filas de download e o espaço do servidor em um painel protegido por login. Use apenas conteúdos próprios ou para os quais você tenha autorização.</p></article><article class="step"><span class="step-number">02</span><h3>Guardar uma cópia</h3><p>Após autorização OAuth, o rclone envia os arquivos locais selecionados para o Google Drive. O Telegram pode receber uma cópia adicional dos arquivos que respeitem o limite de tamanho configurado.</p></article><article class="step"><span class="step-number">03</span><h3>Encontrar de novo</h3><p>Pesquise as cópias por nome, categoria, descrição ou código de identificação. Os links do Drive e Telegram respeitam as permissões dessas contas; os originais locais não são apagados pelo arquivamento.</p></article></div></section>
+      <section class="privacy-callout" aria-labelledby="privacy-title"><div><p class="eyebrow">A conta continua sendo sua</p><h2 id="privacy-title">Autorizar não é tornar público.</h2><p>O Google Drive é conectado pelo navegador, na página oficial do Google. A aplicação não solicita a senha da sua conta e usa a permissão limitada <code>drive.file</code>.</p><a href="/privacy">Entenda o uso dos dados ↗</a></div><ul><li>Sem catálogo público ou compartilhamento automático dos arquivos.</li><li>Credenciais e catálogo permanecem no servidor administrado pelo operador; cópias são armazenadas nos provedores habilitados.</li><li>Você pode revogar a conexão Google e gerenciar suas cópias diretamente nos provedores.</li></ul></section>
+    </main>
+    <footer class="site-footer"><div><a class="brand" href="/">pobreflix<span>.</span></a><p>Biblioteca pessoal. Acesso privado. Feito com Sala MediaStack.</p></div><nav class="footer-links" aria-label="Informações"><a href="/privacy">Privacidade</a><a href="/terms">Termos de uso</a><a href="/privacy#contato">Contato</a></nav></footer>
+  </div>
+</body>
+</html>

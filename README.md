@@ -17,6 +17,12 @@ e limite de tentativas de acesso. As chaves dos servicos permanecem no backend.
 O aplicativo le as configuracoes dos outros containers como somente leitura;
 nao recebe acesso ao socket Docker.
 
+A raiz `/` agora apresenta publicamente a instancia **Pobreflix**, com explicacao
+das integracoes e links para `/privacy` e `/terms`, sem exigir login. O painel e
+seu formulario de entrada ficam em `/app`; as APIs, o catalogo e os arquivos
+continuam protegidos. Os textos publicos identificam esta instancia e o contato
+do seu operador: revise marca, responsavel e e-mail antes de reutilizar o fork.
+
 O arquivo em nuvem opcional inclui **Drive para todos os arquivos** e **Telegram
 tambem para os de ate 2.000 MB**, sem dividir arquivos ou remover os originais.
 A aba **Nuvem** pesquisa nome, codigo, categoria, descricao e caminho; mostra
@@ -88,7 +94,8 @@ Os paines ficam em `localhost` no Windows por padrao:
 
 | Servico | Endereco |
 | --- | --- |
-| Homepage Sala | http://localhost:8090 |
+| Apresentacao publica | http://localhost:8090 |
+| Painel Sala (login) | http://localhost:8090/app |
 | Jellyfin | http://localhost:8096 |
 | Seerr | http://localhost:5055 |
 | qBittorrent | http://localhost:8080 |
@@ -152,6 +159,13 @@ A capacidade exibida e a do filesystem montado em `/media`, nao a memoria/CPU
 do host. No Docker Desktop, confira se a pasta escolhida corresponde ao disco
 que deseja monitorar. Imagens de capas sao carregadas do TMDB pelo navegador.
 
+Para os campos de identidade do Google OAuth, use o seu hostname com `/` como
+pagina inicial, `/privacy` para privacidade e `/terms` para termos. Essas paginas
+sao acessiveis sem sessao, nao carregam rastreadores e nao criam login. Nao
+proteja esses tres caminhos com uma regra externa que impeca a leitura publica.
+A publicacao das paginas nao substitui as verificacoes do Google nem garante
+aprovacao OAuth. A politica descreve o funcionamento real das integracoes.
+
 ## Arquivo Drive + Telegram
 
 Ative essa opcao no instalador Windows ou TrueNAS. A stack local funciona sem
@@ -194,6 +208,13 @@ com `-DriveConfig 'C:\caminho\rclone.conf'`.
 
 Cloudflare continua com login por link, sem API token. O OAuth do Google e uma
 autorizacao separada e nao e substituido pelo login Cloudflare.
+
+Se um cliente **Web** ja criado apresentar `redirect_uri_mismatch`, o Google
+precisa ter cadastrado nos **URIs de redirecionamento autorizados** o endereco
+local exato exibido pelo rclone (normalmente `http://127.0.0.1:53682/`, com barra
+final). Nao e uma origem JavaScript nem o dominio Cloudflare. Salve no Console,
+aguarde a propagacao e abra novamente o link local de autorizacao da sessao
+ainda ativa. Para um cliente novo, prefira **Desktop app**, conforme o guia.
 
 No TrueNAS, execute `connect-drive.ps1` em um computador Windows, transfira o
 arquivo `.secrets/rclone/rclone.conf` por um canal privado e informe o caminho

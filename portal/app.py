@@ -21,6 +21,13 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 STATIC = Path(__file__).parent / 'static'
+PUBLIC_FILES = {
+    '/': 'home.html', '/app': 'index.html', '/app/': 'index.html',
+    '/privacy': 'privacy.html', '/privacy/': 'privacy.html',
+    '/terms': 'terms.html', '/terms/': 'terms.html',
+    '/public.css': 'public.css', '/style.css': 'style.css', '/cloud.css': 'cloud.css',
+    '/app.js': 'app.js', '/cloud.js': 'cloud.js',
+}
 CONFIGS = Path(os.getenv('CONFIG_ROOT', '/configs'))
 PASSWORD = os.getenv('DASHBOARD_PASSWORD', '')
 USERNAME = os.getenv('ADMIN_USER', 'admin')
@@ -232,7 +239,29 @@ class Handler(BaseHTTPRequestHandler):
         if cookie:
             self.send_header('Set-Cookie', cookie)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != 'HEAD':
+            self.wfile.write(body)
+
+    def public_file(self, path):
+        # Only this explicit allowlist is public. Never resolve a request path
+        # against the filesystem or expose configuration/catalogue files.
+        filename = PUBLIC_FILES.get(path)
+        if filename is None:
+            return False
+        file = STATIC / filename
+        content_type = mimetypes.guess_type(str(file))[0] or 'text/plain'
+        if content_type.startswith('text/'):
+            content_type += '; charset=utf-8'
+        self.send(200, file.read_bytes(), content_type)
+        return True
+
+    def do_HEAD(self):
+        path = urllib.parse.urlsplit(self.path).path
+        if path == '/health':
+            return self.send(200, {'ok': True})
+        if self.public_file(path):
+            return
+        return self.send(405, {'error': 'Use GET para este recurso.'})
 
     def session(self):
         cookie = SimpleCookie()
@@ -273,9 +302,8 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         if path == '/health':
             return self.send(200, {'ok': True})
-        if path in ('/', '/style.css', '/cloud.css', '/app.js', '/cloud.js'):
-            file = STATIC / ('index.html' if path == '/' else path[1:])
-            return self.send(200, file.read_bytes(), mimetypes.guess_type(str(file))[0] or 'text/plain')
+        if self.public_file(path):
+            return
         token = self.session()
         if not token:
             return self.send(401, {'error': 'Entre para acessar o painel.'})

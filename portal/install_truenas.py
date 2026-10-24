@@ -37,7 +37,8 @@ def main():
         hostname = input(f'Subdominio completo (Enter para manter {hostname}): ').strip() or hostname
     assets = ['portal/Dockerfile', 'portal/Dockerfile.archive', 'portal/Dockerfile.telegram',
               'portal/app.py', 'portal/archive.py', 'portal/archive_client.py', 'portal/archive_setup.py', 'portal/cloudflare_setup.py',
-              'portal/static/index.html', 'portal/static/style.css', 'portal/static/app.js', 'portal/static/cloud.css', 'portal/static/cloud.js']
+              'portal/static/index.html', 'portal/static/home.html', 'portal/static/privacy.html', 'portal/static/terms.html',
+              'portal/static/public.css', 'portal/static/style.css', 'portal/static/app.js', 'portal/static/cloud.css', 'portal/static/cloud.js']
     for asset in assets:
         target = root / asset
         target.parent.mkdir(parents=True, exist_ok=True)

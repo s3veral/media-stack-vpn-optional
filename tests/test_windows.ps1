@@ -32,6 +32,9 @@ Write-Host 'PASS: remote install can be prepared without requesting an API token
 $archiveSettings = Get-Content (Join-Path $install '.settings.json') -Raw | ConvertFrom-Json
 if (-not $archiveSettings.ArchiveEnabled) { throw 'Archive choice was not saved.' }
 if (-not (Test-Path (Join-Path $install 'portal/static/cloud.js'))) { throw 'Cloud UI asset missing from installed files.' }
+foreach ($publicAsset in @('home.html', 'privacy.html', 'terms.html', 'public.css')) {
+    if (-not (Test-Path (Join-Path $install ('portal/static/' + $publicAsset)))) { throw "Public page asset missing: $publicAsset" }
+}
 if (-not (Test-Path (Join-Path $media 'photos')) -or -not (Test-Path (Join-Path $media 'music'))) { throw 'Photos/music roots missing.' }
 $key = Get-Content (Join-Path $install '.secrets/archive/proxy-key') -Raw
 if ($key.Length -lt 32) { throw 'Archive proxy key is too short.' }

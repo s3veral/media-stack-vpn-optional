@@ -34,6 +34,7 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
     Write-Host 'Autorize o Drive no navegador. Use um aplicativo OAuth proprio, do tipo Desktop app.'
     Write-Host 'Guia: https://rclone.org/drive/#making-your-own-client-id'
     Write-Host 'Console: https://console.cloud.google.com/apis/credentials'
+    Write-Host 'Escolha Aplicativo para computador, nao Aplicativo da Web. O retorno da autorizacao e local, nao pelo Cloudflare.'
     $clientId = Read-Host 'Google OAuth Client ID (termina em .apps.googleusercontent.com)'
     $secureSecret = Read-Host 'Google OAuth Client secret (oculto)' -AsSecureString
     $clientSecret = (New-Object Net.NetworkCredential('', $secureSecret)).Password
@@ -44,6 +45,7 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
     $content = $null
 }
 Write-Host 'No rclone: autorize pelo navegador; para conta pessoal, responda N a Shared Drive.'
+Write-Host 'Se usar um cliente Web existente e aparecer redirect_uri_mismatch, autorize o URI local exato exibido pelo rclone no Google Cloud.'
 & $binary --config $ConfigPath config reconnect 'sala:'
 if ($LASTEXITCODE -ne 0) { throw 'Autorizacao do Drive nao concluida. O arquivo foi preservado para nova tentativa.' }
 Write-Host "Drive autorizado. Arquivo privado: $ConfigPath"

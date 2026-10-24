@@ -116,7 +116,7 @@ New-Item -ItemType Directory -Force -Path $MediaPath | Out-Null
 foreach ($dir in @('movies', 'tv', 'photos', 'music', 'downloads', 'downloads\torrent', 'downloads\crossseed')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $MediaPath $dir) | Out-Null
 }
-$assets = @('compose.windows.yml', 'compose.direct.yml', 'compose.vpn.yml', 'truenas-file-structure.sh', 'install-windows.ps1', 'connect-drive.ps1', 'stack.ps1', '.dockerignore', 'windows\Dockerfile.setup', 'windows\build_configure.py', 'windows\entrypoint.sh', 'portal\Dockerfile', 'portal\Dockerfile.archive', 'portal\Dockerfile.telegram', 'portal\app.py', 'portal\archive.py', 'portal\archive_client.py', 'portal\archive_setup.py', 'portal\cloudflare_setup.py', 'portal\static\index.html', 'portal\static\style.css', 'portal\static\app.js', 'portal\static\cloud.js', 'portal\static\cloud.css')
+$assets = @('compose.windows.yml', 'compose.direct.yml', 'compose.vpn.yml', 'truenas-file-structure.sh', 'install-windows.ps1', 'connect-drive.ps1', 'stack.ps1', '.dockerignore', 'windows\Dockerfile.setup', 'windows\build_configure.py', 'windows\entrypoint.sh', 'portal\Dockerfile', 'portal\Dockerfile.archive', 'portal\Dockerfile.telegram', 'portal\app.py', 'portal\archive.py', 'portal\archive_client.py', 'portal\archive_setup.py', 'portal\cloudflare_setup.py', 'portal\static\index.html', 'portal\static\home.html', 'portal\static\privacy.html', 'portal\static\terms.html', 'portal\static\public.css', 'portal\static\style.css', 'portal\static\app.js', 'portal\static\cloud.js', 'portal\static\cloud.css')
 foreach ($asset in $assets) {
     $source = Join-Path $PSScriptRoot $asset
     $destination = Join-Path $InstallDir $asset
@@ -225,6 +225,7 @@ if ($archiveEnabled) {
 Write-Host ''
 Write-Host 'Stack iniciada. Jellyfin: http://localhost:8096 | Seerr: http://localhost:5055'
 Write-Host 'Homepage Sala: http://localhost:8090'
+Write-Host 'Painel privado: http://localhost:8090/app | Paginas publicas: /privacy e /terms'
 if ($archiveEnabled) { Write-Host 'Arquivo em nuvem: aba Nuvem da homepage. Copias incrementais; originais preservados.' }
 if ($remoteEnabled) { Write-Host "Acesso externo: https://$PublicHostname" }
 Write-Host 'qBittorrent: http://localhost:8080 | Radarr: http://localhost:7878 | Sonarr: http://localhost:8989'
