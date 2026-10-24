@@ -27,6 +27,7 @@ jobs:
           }
           ./install-windows.ps1 -InstallDir "$PWD/.test-output/install" -MediaPath "$PWD/.test-output/media" -Vpn Off -Remote Off -GenerateOnly
           ./tests/test_windows.ps1
+          ./tests/test_bootstrap.ps1
       - name: Compose direct and VPN variants
         env:
           MEDIA_PATH: /tmp/media-stack-ci
