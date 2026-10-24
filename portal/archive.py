@@ -22,6 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import unicodedata
 import xml.etree.ElementTree as ET
 
 TELEGRAM_LIMIT = 2000 * 1024 * 1024
@@ -38,6 +39,16 @@ class ArchiveError(Exception):
 
 class StaleSource(ArchiveError):
     pass
+
+
+class RetryLater(ArchiveError):
+    def __init__(self, message, retry_after):
+        super().__init__(message)
+        self.retry_after = max(1, int(retry_after))
+
+
+def normalized(text):
+    return ''.join(char for char in unicodedata.normalize('NFKD', str(text)).casefold() if not unicodedata.combining(char))
 
 
 def source_file(media, relative):
@@ -109,6 +120,7 @@ class Catalog:
     def connect(self):
         db = sqlite3.connect(str(self.path), timeout=30)
         db.row_factory = sqlite3.Row
+        db.create_function('NORM', 1, normalized)
         try:
             yield db
             db.commit()
@@ -156,7 +168,14 @@ class Catalog:
                             db.execute('INSERT OR REPLACE INTO observations VALUES (?,?,?,?,NULL)',
                                        (relative, stat.st_size, stat.st_mtime_ns, now))
                             continue
-                        if observation['code'] or now - observation['stable_since'] < stable_seconds or now - stat.st_mtime < stable_seconds:
+                        if observation['code']:
+                            existing = db.execute('SELECT relative_path FROM items WHERE code=?', (observation['code'],)).fetchone()
+                            if existing and not (media / existing['relative_path']).is_file():
+                                db.execute('UPDATE items SET relative_path=?,mtime_ns=? WHERE code=?', (relative, stat.st_mtime_ns, observation['code']))
+                                for provider in ('drive', 'telegram'):
+                                    db.execute(f"UPDATE items SET {provider}_state='pending',next_{provider}=0 WHERE code=? AND {provider}_state='source_missing'", (observation['code'],))
+                            continue
+                        if now - observation['stable_since'] < stable_seconds or now - stat.st_mtime < stable_seconds:
                             continue
                     sha, md5 = hashlib.sha256(), hashlib.md5()
                     with path.open('rb') as source:
@@ -211,21 +230,23 @@ class Catalog:
                 db.execute("UPDATE items SET telegram_state='uploaded',telegram_message=?,telegram_url=?,telegram_error=NULL,updated_at=? WHERE code=?",
                            (result['message_id'], result['url'], time.time(), code))
 
-    def fail(self, provider, code, message):
+    def fail(self, provider, code, message, retry_after=None):
         now = time.time()
         with self.connect() as db:
             row = db.execute(f'SELECT attempts_{provider} FROM items WHERE code=?', (code,)).fetchone()
             attempts = (row[0] or 0) + 1
             delay = min(6 * 3600, 60 * (2 ** min(attempts, 9)))
+            if retry_after is not None:
+                delay = max(delay, int(retry_after) + 5)
             db.execute(f"UPDATE items SET {provider}_state='failed',{provider}_error=?,next_{provider}=?,attempts_{provider}=?,updated_at=? WHERE code=?",
                        (str(message)[:300], now + delay, attempts, now, code))
         # One unavailable provider must not cause an error storm across 3 TB.
-        self.setting('pause_' + provider, now + min(delay, 3600))
+        self.setting('pause_' + provider, now + (delay if retry_after is not None else min(delay, 3600)))
 
     def listing(self, query='', category='', page=1):
         page = max(1, min(int(page), 1000000))
-        escaped = query[:150].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        clause = "(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\' OR relative_path LIKE ? ESCAPE '\\')"
+        escaped = normalized(query[:150]).replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        clause = "(NORM(title) LIKE ? ESCAPE '\\' OR NORM(description) LIKE ? ESCAPE '\\' OR NORM(code) LIKE ? ESCAPE '\\' OR NORM(relative_path) LIKE ? ESCAPE '\\')"
         values = ['%' + escaped + '%'] * 4
         if category:
             clause += ' AND category=?'
@@ -351,8 +372,20 @@ class Telegram:
             with urllib.request.urlopen(request, timeout=6 * 3600) as response:
                 result = json.load(response)
             if not result.get('ok'):
+                retry_after = (result.get('parameters') or {}).get('retry_after')
+                if isinstance(retry_after, int) and retry_after > 0:
+                    raise RetryLater('Telegram solicitou espera; retomada automatica apos o prazo informado.', retry_after)
                 raise ArchiveError('Telegram recusou o envio; confira permissoes do bot e limites.')
             return result['result']
+        except urllib.error.HTTPError as error:
+            try:
+                result = json.loads(error.read(65536))
+                retry_after = (result.get('parameters') or {}).get('retry_after')
+            except (ValueError, AttributeError):
+                retry_after = None
+            if isinstance(retry_after, int) and retry_after > 0:
+                raise RetryLater('Telegram solicitou espera; retomada automatica apos o prazo informado.', retry_after) from None
+            raise ArchiveError('Telegram recusou o envio; confira o canal, permissoes e o Bot API local.') from None
         except (urllib.error.URLError, OSError, ValueError):
             raise ArchiveError('Telegram indisponivel; confira o bot, canal privado e servidor Bot API local.') from None
 
@@ -419,7 +452,7 @@ class Worker:
                 db.execute(f"UPDATE items SET {provider}_state='source_missing',{provider}_error=? WHERE code=?", (str(error), item['code']))
         except (ArchiveError, OSError, ValueError, subprocess.SubprocessError) as error:
             message = str(error) if isinstance(error, ArchiveError) else 'Falha temporaria durante o envio; original preservado.'
-            self.catalog.fail(provider, item['code'], message)
+            self.catalog.fail(provider, item['code'], message, retry_after=getattr(error, 'retry_after', None))
         return True
 
     def upload_loop(self, provider):
@@ -427,6 +460,8 @@ class Worker:
             try:
                 if not self.process_one(provider):
                     self.stop.wait(5)
+                elif provider == 'telegram':
+                    self.stop.wait(1.1)
             except Exception:
                 self.stop.wait(30)
 

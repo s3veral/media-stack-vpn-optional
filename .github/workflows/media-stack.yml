@@ -68,7 +68,18 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check whether the pinned Telegram image changed
+        id: telegram-source
+        run: |
+          if [ "${{ github.event_name }}" = workflow_dispatch ] || git diff --name-only HEAD^ HEAD | rg -q '^portal/Dockerfile.telegram$'; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Build pinned official Telegram Bot API source
+        if: steps.telegram-source.outputs.changed == 'true'
         run: |
           docker build -f portal/Dockerfile.telegram -t sala-telegram-check .
           docker run --rm sala-telegram-check --help

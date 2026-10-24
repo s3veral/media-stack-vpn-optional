@@ -99,6 +99,21 @@ class CatalogTests(Fixture):
         self.scan()
         self.assertEqual(self.catalog.listing()['files'], 1)
 
+    def test_duplicate_source_recovers_after_selected_copy_is_removed(self):
+        self.file('photos/a.jpg')
+        self.file('photos/b.jpg')
+        self.scan()
+        selected = self.item()['relative_path']
+        (self.media / selected).unlink()
+        self.catalog.scan(self.media, now=1400)
+        self.assertTrue((self.media / self.item()['relative_path']).is_file())
+        self.assertEqual(self.catalog.listing()['files'], 1)
+
+    def test_search_handles_portuguese_accents_and_case(self):
+        self.file('photos/Férias em Família.jpg')
+        self.scan()
+        self.assertEqual(self.catalog.listing(query='FERIAS EM FAMILIA')['total'], 1)
+
     def test_search_code_category_and_sql_wildcards(self):
         self.file('photos/100% family.jpg', b'photo')
         self.file('music/song.mp3', b'music')
@@ -238,6 +253,16 @@ class ProviderTests(Fixture):
             worker.process_one('drive')
         self.assertEqual(self.item()['drive_state'], 'source_missing')
         self.assertEqual(self.catalog.setting('pause_drive'), '')
+
+    def test_telegram_server_retry_after_is_respected(self):
+        self.file()
+        self.scan()
+        worker = archive.Worker(self.config, self.catalog)
+        with patch.object(worker.telegram, 'upload', side_effect=archive.RetryLater('aguarde', 7200)):
+            worker.process_one('telegram')
+        self.assertGreater(float(self.catalog.setting('pause_telegram')), time.time() + 7190)
+        self.assertGreater(self.item()['next_telegram'], time.time() + 7190)
+        self.assertIsNotNone(self.catalog.queue_item('drive'))
 
 
 class WorkerHttpTests(Fixture):
