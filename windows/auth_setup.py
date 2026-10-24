@@ -71,6 +71,31 @@ def download_client(schema, username, password, category, existing=None):
     return result
 
 
+def seerr_service(name, port, key, metadata):
+    profiles = metadata.get('profiles') or []
+    stock = {'Any', 'SD', 'HD-720p', 'HD-1080p', 'Ultra-HD', 'HD - 720p/1080p'}
+    profile = (next((p for p in profiles if p['name'] == '1080p Balanced'), None)
+               or next((p for p in profiles if '1080' in p['name'] and p['name'] not in stock), None)
+               or next((p for p in profiles if p['name'] == 'HD-1080p'), None)
+               or next(iter(profiles), None))
+    roots = [r['path'] for r in metadata.get('rootFolders', [])]
+    if not profile or not roots:
+        raise SetupError('Seerr: faltam perfis ou pasta de biblioteca no ' + name + '.')
+    wanted = '/media/movies' if name == 'radarr' else '/media/tv'
+    result = {'name': name.capitalize(), 'hostname': name, 'port': port, 'apiKey': key,
+              'useSsl': False, 'baseUrl': metadata.get('urlBase') or '',
+              'activeProfileId': profile['id'], 'activeProfileName': profile['name'],
+              'activeDirectory': wanted if wanted in roots else roots[0],
+              'is4k': False, 'tags': [], 'isDefault': True, 'externalUrl': '',
+              'syncEnabled': True, 'preventSearch': False, 'tagRequests': False}
+    if name == 'radarr':
+        result['minimumAvailability'] = 'released'
+    else:
+        result.update(enableSeasonFolders=True, seriesType='standard', animeSeriesType='anime',
+                      animeTags=[], monitorNewItems='all')
+    return result
+
+
 class AuthSetup:
     def __init__(self, username, password, configs='/configs', secrets='/secrets'):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', username) or len(password) < 12 or any(c in password for c in '\r\n'):
@@ -222,6 +247,27 @@ class AuthSetup:
     def verify_seerr(self):
         http('http://seerr:5055/api/v1/auth/jellyfin', {'username': self.username, 'password': self.password})
 
+    def seerr_services(self):
+        settings = json.loads((self.configs / 'seerr/settings.json').read_text())
+        headers = {'X-Api-Key': settings['main']['apiKey']}
+        for name, port in [('radarr', 7878), ('sonarr', 8989)]:
+            base = 'http://seerr:5055/api/v1/settings/' + name
+            existing = http(base, headers=headers)
+            if existing:
+                default = next((s for s in existing if s.get('isDefault') and not s.get('is4k')), None)
+                if not default:
+                    raise SetupError('Escolha um servidor padrao ' + name + ' no Seerr; configuracao existente preservada.')
+                http(base + '/test', default, headers)
+                continue
+            key = ET.parse(self.configs / name / 'config.xml').findtext('ApiKey')
+            metadata = http(base + '/test', {'hostname': name, 'port': port, 'apiKey': key,
+                                           'useSsl': False, 'baseUrl': ''}, headers)
+            body = seerr_service(name, port, key, metadata)
+            http(base, body, headers)
+            saved = http(base, headers=headers)
+            if not any(s.get('hostname') == name and s.get('isDefault') for s in saved):
+                raise SetupError('Seerr nao confirmou o servidor ' + name + '.')
+
     def verify_profilarr(self):
         connection = client()
         http('http://profilarr:6868/auth/login', {'username': self.username, 'password': self.password},
@@ -237,6 +283,7 @@ class AuthSetup:
                   ('Prowlarr', lambda: self.arr('prowlarr', 9696, 'v1')),
                   ('Bazarr', self.bazarr), ('Qui', self.qui),
                   ('Jellyfin', self.verify_jellyfin), ('Seerr', self.verify_seerr),
+                  ('Seerr -> Radarr/Sonarr', self.seerr_services),
                   ('Profilarr', self.verify_profilarr)]
         failed = []
         for name, action in checks:

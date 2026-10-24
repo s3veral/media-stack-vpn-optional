@@ -124,7 +124,9 @@ com autenticacao propria. Cada app conserva sua sessao; nao e SSO. Contas Google
 Telegram, tokens e chaves de API nao sao alterados por essa padronizacao.
 O Dozzle usa hash bcrypt privado e exige login mesmo apos o prazo de 15 minutos
 do wizard; shell, acoes de containers e MCP permanecem desligados. O helper
-tambem corrige o volume Qui para UID 1000 e conecta Radarr/Sonarr ao qBittorrent.
+tambem corrige o volume Qui para UID 1000, conecta Radarr/Sonarr ao qBittorrent
+e cadastra esses servidores no Seerr quando ainda nao ha nenhum. Servidores
+ja cadastrados sao testados sem substituir perfis ou pastas escolhidos por voce.
 Os endpoints administrativos continuam em localhost e nao sao publicados no tunnel.
 
 Para reaplicar somente logins/conexoes, sem refazer perfis ou automacoes:
