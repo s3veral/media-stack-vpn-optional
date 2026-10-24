@@ -93,8 +93,8 @@ printf '\\nRESULT=%s|%s|%s|%s\\n' "$VPN_ENABLED" "$QBIT_NETWORK_INTERFACE" "$VPN
         self.assertIn('http://radarr:7878', script)
         self.assertIn('cfg="/configs/$1/config.xml"', script)
         self.assertIn('"${#TODO_LIST[@]}" -eq 0 ] || exit 2', script)
-        result = subprocess.run([BASH, '-n'], input=script, text=True, encoding='utf-8', capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        result = subprocess.run([BASH, '-n'], input=script.encode('utf-8'), capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8'))
 
 
 if __name__ == '__main__':

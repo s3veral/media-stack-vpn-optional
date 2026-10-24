@@ -15,6 +15,7 @@ jobs:
       - run: bash -n truenas-file-structure.sh && bash -n windows/entrypoint.sh
       - run: python3 -m unittest discover -s tests -v
       - run: node --check portal/static/app.js && node --check portal/static/cloud.js
+      - run: node tests/test_hub.js
       - name: Generate portable setup and check Bash syntax
         run: python3 windows/build_configure.py | bash -n
       - name: Parse PowerShell and prepare direct mode

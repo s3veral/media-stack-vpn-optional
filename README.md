@@ -9,9 +9,10 @@ instalacao. Sem VPN, o trafego sai pela sua conexao normal e os peers veem
 seu IP publico. Com VPN, o cliente fica vinculado a `wg0`; o instalador nao
 muda automaticamente para conexao direta se o tunel falhar.
 
-A homepage **Sala** centraliza busca de filmes/series pelo Seerr, solicitacao
-de titulos, progresso e velocidade dos downloads, pausa/retomada, fila do
-Radarr/Sonarr, pedidos recentes, biblioteca e capacidade do disco de midia.
+A homepage **Sala** e uma central enxuta: progresso e velocidade dos downloads,
+pausa/retomada, fila Radarr/Sonarr, pedidos recentes, capacidade do disco e
+arquivo Drive + Telegram. Busca/pedidos ficam no **Seerr** e a biblioteca/player
+no **Jellyfin**, com atalhos locais na aba Aplicativos, sem duplicar essas telas.
 O painel atualiza a cada 15 segundos e tem login, sessao HttpOnly, protecao CSRF
 e limite de tentativas de acesso. As chaves dos servicos permanecem no backend.
 O aplicativo le as configuracoes dos outros containers como somente leitura;
@@ -115,6 +116,35 @@ para diagnostico; reexecute para tentar novamente. Indexadores do Prowlarr,
 idiomas/provedores do Bazarr e o scan inicial do Qui continuam manuais.
 As automacoes do Qui herdadas do upstream incluem limpeza de downloads antigos;
 revise-as na interface antes de adicionar sua biblioteca.
+
+### Mesmo login local
+
+No Windows, `admin` e a senha aleatoria da Sala sao padronizados nos servicos
+com autenticacao propria. Cada app conserva sua sessao; nao e SSO. Contas Google,
+Telegram, tokens e chaves de API nao sao alterados por essa padronizacao.
+O Dozzle usa hash bcrypt privado e exige login mesmo apos o prazo de 15 minutos
+do wizard; shell, acoes de containers e MCP permanecem desligados. O helper
+tambem corrige o volume Qui para UID 1000 e conecta Radarr/Sonarr ao qBittorrent.
+Os endpoints administrativos continuam em localhost e nao sao publicados no tunnel.
+
+Para reaplicar somente logins/conexoes, sem refazer perfis ou automacoes:
+
+```powershell
+cd "$env:USERPROFILE\MediaStack"
+.\stack.ps1 --profile setup run --rm --no-deps setup auth-prepare
+.\stack.ps1 up -d --no-deps dozzle qui
+.\stack.ps1 --profile setup run --rm --no-deps setup auth
+```
+
+### Testar e criar filas
+
+O qBittorrent aceita torrents/magnets autorizados diretamente, sem indexador.
+A fila fica ativada com dois downloads simultaneos como limite inicial; ajuste
+em Opcoes > BitTorrent se desejar. Nenhum download de teste e iniciado pelo helper.
+Para pedidos automaticos no Seerr, configure suas fontes no **Prowlarr** e
+confirme a sincronizacao com Radarr/Sonarr. Sem fontes, um pedido pode ficar
+aguardando e nao representa uma transferencia ativa. A fila de importacao
+Radarr/Sonarr e a fila de transferencias qBittorrent sao coisas diferentes.
 
 ## Cloudflare Tunnel e subdominio
 

@@ -85,6 +85,9 @@ New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'wireguard') | 
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets\runtime') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets\archive') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets\rclone') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir '.secrets\dozzle') | Out-Null
+$dozzleUsersPath = Join-Path $InstallDir '.secrets\dozzle\users.yml'
+if (-not (Test-Path -LiteralPath $dozzleUsersPath)) { Write-Utf8 $dozzleUsersPath "users: {}`n" }
 $proxyKeyPath = Join-Path $InstallDir '.secrets\archive\proxy-key'
 if (-not (Test-Path -LiteralPath $proxyKeyPath)) { Write-Utf8 $proxyKeyPath ([Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N')) }
 $wgTarget = Join-Path $InstallDir 'wireguard\wg0.conf'
@@ -116,7 +119,8 @@ New-Item -ItemType Directory -Force -Path $MediaPath | Out-Null
 foreach ($dir in @('movies', 'tv', 'photos', 'music', 'downloads', 'downloads\torrent', 'downloads\crossseed')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $MediaPath $dir) | Out-Null
 }
-$assets = @('compose.windows.yml', 'compose.direct.yml', 'compose.vpn.yml', 'truenas-file-structure.sh', 'install-windows.ps1', 'connect-drive.ps1', 'stack.ps1', '.dockerignore', 'windows\Dockerfile.setup', 'windows\build_configure.py', 'windows\entrypoint.sh', 'portal\Dockerfile', 'portal\Dockerfile.archive', 'portal\Dockerfile.telegram', 'portal\app.py', 'portal\archive.py', 'portal\archive_client.py', 'portal\archive_setup.py', 'portal\cloudflare_setup.py', 'portal\static\index.html', 'portal\static\home.html', 'portal\static\privacy.html', 'portal\static\terms.html', 'portal\static\public.css', 'portal\static\style.css', 'portal\static\app.js', 'portal\static\cloud.js', 'portal\static\cloud.css')
+$assets = @('compose.windows.yml', 'compose.direct.yml', 'compose.vpn.yml', 'truenas-file-structure.sh', 'install-windows.ps1', 'connect-drive.ps1', 'stack.ps1', '.dockerignore', 'windows\Dockerfile.setup', 'windows\build_configure.py', 'windows\entrypoint.sh', 'windows\auth_setup.py', 'portal\Dockerfile', 'portal\Dockerfile.archive', 'portal\Dockerfile.telegram', 'portal\app.py', 'portal\archive.py', 'portal\archive_client.py', 'portal\archive_setup.py', 'portal\cloudflare_setup.py', 'portal\static\index.html', 'portal\static\home.html', 'portal\static\privacy.html', 'portal\static\terms.html', 'portal\static\public.css', 'portal\static\style.css', 'portal\static\app.js', 'portal\static\cloud.js', 'portal\static\cloud.css')
+$assets += 'portal\static\hub.css'
 foreach ($asset in $assets) {
     $source = Join-Path $PSScriptRoot $asset
     $destination = Join-Path $InstallDir $asset
@@ -190,11 +194,14 @@ Invoke-Compose config --quiet
 Invoke-Compose stop qbittorrent
 Invoke-Compose --profile setup build setup
 Invoke-Compose --profile setup run --rm --no-deps setup prepare
+Invoke-Compose --profile setup run --rm --no-deps setup auth-prepare
 Invoke-Compose up -d --build
 if (-not $SkipConfigure) {
     try { Invoke-Compose --profile setup run --rm --no-deps setup configure }
     catch { Write-Warning 'Algumas integracoes precisam de ajuste (veja as mensagens acima). Os containers seguem ativos; conclua o setup nas interfaces ou reexecute o instalador.' }
 }
+try { Invoke-Compose --profile setup run --rm --no-deps setup auth }
+catch { Write-Warning 'Alguns logins/conexoes precisam de ajuste. Reexecute: .\stack.ps1 --profile setup run --rm --no-deps setup auth' }
 if ($remoteEnabled) {
     Write-Host 'Cloudflare: abra o link que aparecera abaixo e autorize o dominio na sua conta.'
     Write-Host 'Depois informe o endereco completo do painel, por exemplo sala.seudominio.com.'

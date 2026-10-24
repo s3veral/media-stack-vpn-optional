@@ -17,6 +17,13 @@ def build(source):
              8096: 'jellyfin', 5055: 'seerr', 6767: 'bazarr', 7476: 'qui'}
     for port, host in hosts.items():
         configure = configure.replace(f'http://localhost:{port}', f'http://{host}:{port}')
+    # Inside qBit, bootstrap must use loopback; the Docker hostname is still
+    # needed for the independent external credential check and other services.
+    configure = configure.replace('then docker exec qbittorrent curl -sS -m 30 "$@"',
+        r'''then
+        local argument fixed=()
+        for argument in "$@"; do fixed+=("${argument/http:\/\/qbittorrent:8080/http:\/\/localhost:8080}"); done
+        docker exec qbittorrent curl -sS -m 30 "${fixed[@]}"''')
     # Summary is for the host browser, rather than Docker DNS names.
     configure = configure.replace('http://$HOST_IP:$port', 'http://localhost:$port')
     # A failed setup step is visible to Compose/PowerShell, not just a log message.

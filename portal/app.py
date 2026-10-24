@@ -27,6 +27,7 @@ PUBLIC_FILES = {
     '/terms': 'terms.html', '/terms/': 'terms.html',
     '/public.css': 'public.css', '/style.css': 'style.css', '/cloud.css': 'cloud.css',
     '/app.js': 'app.js', '/cloud.js': 'cloud.js',
+    '/hub.css': 'hub.css',
 }
 CONFIGS = Path(os.getenv('CONFIG_ROOT', '/configs'))
 PASSWORD = os.getenv('DASHBOARD_PASSWORD', '')

@@ -175,8 +175,13 @@ services:
     image: amir20/dozzle:latest
     environment:
       DOZZLE_NO_ANALYTICS: "true"
+      DOZZLE_AUTH_PROVIDER: simple
+      DOZZLE_ENABLE_ACTIONS: "false"
+      DOZZLE_ENABLE_SHELL: "false"
+      DOZZLE_ENABLE_MCP: "false"
+      DOZZLE_DISABLE_SETUP_WIZARD: "true"
     ports: ["127.0.0.1:8888:8080"]
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "dozzle-config:/data"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "dozzle-config:/data", "./.secrets/dozzle/users.yml:/data/users.yml:ro"]
 
   # Runs only during install/reconfigure. It reuses the upstream API setup.
   setup:
